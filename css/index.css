@@ -619,7 +619,16 @@ header {
 .markdown-body h2 { font-size: 1.4em; border-bottom: 1px solid #30363d; padding-bottom: 4px; }
 .markdown-body h3 { font-size: 1.1em; color: var(--accent-orange); }
 
-.markdown-body a { color: #58a6ff; text-decoration: none; }
+.markdown-body {
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
+}
+
+.markdown-body a { 
+  color: #58a6ff; 
+  text-decoration: none; 
+  word-break: break-all;
+}
 .markdown-body a:hover { text-decoration: underline; }
 
 .markdown-body p, .markdown-body li {
@@ -759,13 +768,9 @@ header {
     width: 100%;
     max-width: 100%;
     padding: 16px;
-    overflow-wrap: anywhere;
-    word-wrap: break-word;
-    word-break: break-all;
   }
 
   .markdown-body a {
-    word-break: break-all;
     overflow-wrap: anywhere;
   }
 
