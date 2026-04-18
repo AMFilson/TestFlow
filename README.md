@@ -1,14 +1,21 @@
-# Markdown Quiz Player
+# TestFlow // AI Enhanced Learning Platform
 
-A local web app that uploads a markdown quiz file and renders it as an interactive quiz UI with:
-- option selection
-- hint reveal
-- answer submission
-- instant correctness feedback
-- detailed rationale reveal
-
-The site is a unified dashboard that handles both study guide generation and interactive quiz building from a single interface.
+TestFlow is a web application that provides a unified dashboard for study guide generation and interactive quiz building from a single interface. 
 It is live at: [https://testflow-zeta.vercel.app](https://testflow-zeta.vercel.app)
+
+## Key Features
+
+- **Unified Dual-Column Workspace**: Generates and renders a structured study guide on the left and builds a high-depth interactive quiz on the right.
+- **Session Persistence**: Autosaves generated guides and active quiz states via `localStorage` to prevent data loss on page refresh.
+- **Customizable Reading Experience**: Includes typography controls (`+` / `-`) to adjust study guide font sizes for comfortable viewing without breaking layout constraints.
+- **Vercel Analytics & Deployment Ready**: Pre-configured for deployment with Vercel Insights integration.
+- **Robust AI Parsing**: Enhanced error handling to reliably generate structured quiz formats.
+- **Interactive Quiz Player**:
+  - Option selection
+  - Hint reveal
+  - Answer submission
+  - Instant correctness feedback
+  - Detailed rationale reveal
 
 ## Tech Stack
 
