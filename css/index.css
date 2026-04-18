@@ -256,12 +256,12 @@ header {
 /* MAIN WORKSPACE */
 .workspace {
   display: grid;
-  grid-template-columns: 1fr 1.5fr; /* Shifted divider to the left */
+  grid-template-columns: 1.1fr 1fr;
   flex: 1;
 }
 
 .col-left, .col-right {
-  padding: 32px;
+  padding: 32px 48px;
 }
 
 .col-left {
