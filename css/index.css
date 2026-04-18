@@ -262,6 +262,7 @@ header {
 
 .col-left, .col-right {
   padding: 32px;
+  min-width: 0; /* Enforce strict fr ratio regardless of content size */
 }
 
 .col-left {
