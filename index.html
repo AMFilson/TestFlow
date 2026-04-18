@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TESTFLOW_ // AI Enhanced Learning Platform</title>
+  <meta name="description" content="TestFlow: AI-Enhanced Learning Platform for generating study guides and high-depth interactive quizzes.">
+  <link rel="icon" href="/images/icon.ico?v=2" type="image/x-icon">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/index.css">
+  <!-- Markdown Parser for AI Output -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- PDF Generator -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <!-- Vercel Analytics -->
+  <script>
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="header-left">
+      <div class="sub-brand">AI Enhanced Learning Platform</div>
+      <div class="brand">TESTFLOW_</div>
+    </div>
+    <div class="header-right">
+      <div class="user-id"><a href="https://github.com/AMFilson" target="_blank">CREATED_BY: ANDREW_FILSON</a></div>
+      <div class="session">ACTIVE_SESSION: <span id="sessionState">IDLE</span></div>
+    </div>
+  </header>
+
+  <!-- CONTROL BAR -->
+  <section class="control-bar">
+    <div class="url-input-group" id="inputContainer">
+      <label class="url-label" for="urlInput" id="sourceLabel">SOURCE_URL</label>
+      <div class="upload-toggle">
+        <label for="fileUpload" class="upload-icon-btn" title="Upload Markdown File">📎</label>
+        <input type="file" id="fileUpload" accept=".md" style="display:none;">
+      </div>
+      <input type="text" id="urlInput" class="url-input" placeholder="Paste link or drop .md file here...">
+      <button class="clear-upload-btn" id="btnClearUpload" title="Return to URL Mode">✕</button>
+    </div>
+
+    <button class="btn btn-orange" id="btnGenerateGuide" title="Generate Study Guide">GENERATE STUDY GUIDE</button>
+    <button class="btn btn-purple" id="btnBuildQuiz" title="Build Quiz" disabled>BUILD QUIZ</button>
+
+        <!-- DOWNLOAD BUTTON -->
+    <div class="download-container">
+      <button class="btn btn-green" id="btnDownload" title="Download Options" disabled aria-haspopup="true" aria-expanded="false">DOWNLOAD</button>
+      <div class="dropdown-menu" id="downloadMenu" role="menu">
+        <div class="dropdown-item" id="downloadMD" title="Export as Markdown (.md)">EXPORT_GUIDE_AS .MD</div>
+        <div class="dropdown-item" id="downloadPDF" title="Export as PDF (.pdf)">EXPORT_GUIDE_AS .PDF</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WORKSPACE -->
+  <section class="workspace">
+    
+    <!-- LEFT: STUDY GUIDE -->
+    <div class="col-left">
+      <div class="section-header">
+        <div class="header-title-group">
+          <h2>GENERATED STUDY GUIDE</h2>
+          <div class="desktop-font-controls">
+            <button class="font-btn font-btn-decrease" id="btnDecreaseFont" title="Decrease Font">-</button>
+            <button class="font-btn font-btn-increase" id="btnIncreaseFont" title="Increase Font">+</button>
+          </div>
+        </div>
+        <div class="section-meta" id="guideIdText">ID: PENDING</div>
+        <div class="edit-actions">
+           <button class="btn-edit-toggle" id="btnToggleEdit" style="display:none;">Edit Mode</button>
+        </div>
+      </div>
+      
+      <div id="guideContent">
+        <!-- Initial empty state -->
+        <div style="font-family: var(--font-mono); color: #888; margin-top: 40px; text-align: center;">
+          [ WAITING FOR SOURCE URL ]
+        </div>
+      </div>
+      <textarea id="guideEditArea" class="guide-edit-area" placeholder="Edit markdown here..."></textarea>
+    </div>
+
+    <!-- RIGHT: ACTIVE QUIZ -->
+    <div class="col-right">
+      <div class="section-header">
+        <h2>ACTIVE QUIZ</h2>
+        <div class="section-meta mono" id="quizCounter">00 / 00</div>
+      </div>
+      
+      <div id="quizContent">
+        <!-- Initial empty state -->
+        <div style="font-family: var(--font-mono); color: #888; margin-top: 40px; text-align: center;">
+          [ QUIZ NOT GENERATED ]
+        </div>
+      </div>
+
+    </div>
+
+  </section>
+
+  <script>
+    // --- UI ELEMENTS ---
+    const urlInput = document.getElementById('urlInput');
+    const btnGenerateGuide = document.getElementById('btnGenerateGuide');
+    const btnBuildQuiz = document.getElementById('btnBuildQuiz');
+    
+    const guideContent = document.getElementById('guideContent');
+    const guideIdText = document.getElementById('guideIdText');
+    const sessionState = document.getElementById('sessionState');
+    
+    const quizContent = document.getElementById('quizContent');
+    const quizCounter = document.getElementById('quizCounter');
+
+    const btnDownload = document.getElementById('btnDownload');
+    const downloadMenu = document.getElementById('downloadMenu');
+    const downloadMD = document.getElementById('downloadMD');
+    const downloadPDF = document.getElementById('downloadPDF');
+
+    const btnDecreaseFont = document.getElementById('btnDecreaseFont');
+    const btnIncreaseFont = document.getElementById('btnIncreaseFont');
+
+    const inputContainer = document.getElementById('inputContainer');
+    const fileUpload = document.getElementById('fileUpload');
+    const btnClearUpload = document.getElementById('btnClearUpload');
+    const sourceLabel = document.getElementById('sourceLabel');
+    const btnToggleEdit = document.getElementById('btnToggleEdit');
+    const guideEditArea = document.getElementById('guideEditArea');
+
+    // --- APP STATE ---
+    let inputMode = 'url'; // 'url' or 'file'
+    let uploadedFile = null;
+    let isEditing = false;
+    let currentQuestionIndex = 0;
+    let userResults = []; // Track { qIdx, userLetter, isCorrect }
+    let allSeenQuestions = []; // Track titles to avoid repeats
+    let inReviewMode = false; // Whether we are looking back at old answers
+    let activeQuizData = null;
+    let lastGuideData = null;
+    let currentFontScale = 1.0;
+
+    // --- PERSISTENCE ---
+    function saveState() {
+      const state = {
+        lastGuideData,
+        activeQuizData,
+        allSeenQuestions,
+        userResults,
+        currentQuestionIndex,
+        urlValue: urlInput.value,
+        inReviewMode,
+        currentFontScale,
+        inputMode,
+        lastGuideData
+      };
+      localStorage.setItem('testflow_v1_state', JSON.stringify(state));
+    }
+
+    function loadState() {
+      const saved = localStorage.getItem('testflow_v1_state');
+      if (saved) {
+        try {
+          const state = JSON.parse(saved);
+          lastGuideData = state.lastGuideData;
+          activeQuizData = state.activeQuizData;
+          allSeenQuestions = state.allSeenQuestions || [];
+          userResults = state.userResults || [];
+          currentQuestionIndex = state.currentQuestionIndex || 0;
+          inReviewMode = state.inReviewMode || false;
+          currentFontScale = state.currentFontScale || 1.0;
+          inputMode = state.inputMode || 'url';
+          if (state.urlValue) urlInput.value = state.urlValue;
+
+          if (inputMode === 'file' && lastGuideData) {
+              setFileModeUI(lastGuideData.filename);
+          }
+
+          if (lastGuideData) {
+            renderGuide(lastGuideData, true); 
+            applyFontScale();
+          }
+          if (activeQuizData) {
+            btnBuildQuiz.disabled = false;
+            // If user has results and not explicitly in sub-question review, show summary
+            if (userResults.length >= activeQuizData.questions.length && !inReviewMode) {
+                renderQuizSummary(true);
+            } else {
+                renderQuizQuestion(inReviewMode, true);
+            }
+          }
+        } catch (e) {
+          console.error("Persistence Load Error:", e);
+        }
+      }
+    }
+
+    // --- WORKFLOW LOGIC ---
+
+    // --- DUAL SOURCE LOGIC ---
+    function setFileModeUI(filename) {
+        inputMode = 'file';
+        sourceLabel.textContent = 'SOURCE_FILE';
+        urlInput.value = filename;
+        urlInput.disabled = true;
+        btnClearUpload.style.display = 'block';
+        inputContainer.classList.remove('drag-active');
+    }
+
+    function clearUpload() {
+        inputMode = 'url';
+        uploadedFile = null;
+        sourceLabel.textContent = 'SOURCE_URL';
+        urlInput.value = '';
+        urlInput.disabled = false;
+        btnClearUpload.style.display = 'none';
+        btnToggleEdit.style.display = 'none';
+        saveState();
+    }
+
+    btnClearUpload.addEventListener('click', clearUpload);
+
+    fileUpload.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) handleFile(file);
+    });
+
+    function handleFile(file) {
+        if (!file.name.endsWith('.md')) return alert("Please upload a .md file.");
+        uploadedFile = file;
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const content = e.target.result;
+            const mockData = {
+                source_url: "LOCAL_FILE",
+                source_title: file.name.replace('.md', ''),
+                filename: file.name,
+                markdown: content
+            };
+            setFileModeUI(file.name);
+            renderGuide(mockData);
+        };
+        reader.readAsText(file);
+    }
+
+    // Drag and Drop
+    inputContainer.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        inputContainer.classList.add('drag-active');
+    });
+    inputContainer.addEventListener('dragleave', () => {
+        inputContainer.classList.remove('drag-active');
+    });
+    inputContainer.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const file = e.dataTransfer.files[0];
+        if (file) handleFile(file);
+    });
+
+    // Edit Mode Toggle
+    btnToggleEdit.addEventListener('click', () => {
+        isEditing = !isEditing;
+        if (isEditing) {
+            btnToggleEdit.textContent = "Save Changes";
+            btnToggleEdit.classList.add('active');
+            guideEditArea.value = lastGuideData.markdown;
+            guideContent.style.display = 'none';
+            guideEditArea.style.display = 'block';
+        } else {
+            btnToggleEdit.textContent = "Edit Mode";
+            btnToggleEdit.classList.remove('active');
+            lastGuideData.markdown = guideEditArea.value;
+            renderGuide(lastGuideData); // Re-render with new content
+            guideEditArea.style.display = 'none';
+            guideContent.style.display = 'block';
+        }
+    });
+
+    // 1. Generate Guide Flow
+    btnGenerateGuide.addEventListener('click', async () => {
+      if (inputMode === 'file') return; // In file mode, rendering is instant on upload.
+
+      const url = urlInput.value.trim();
+      if (!url) return alert("Please enter a URL first.");
+      
+      sessionState.textContent = "EXTRACTING_DATA";
+      btnGenerateGuide.disabled = true;
+      urlInput.disabled = true;
+      
+      guideContent.innerHTML = '';
+      
+      // Phase 1: Processing
+      const processCard = document.createElement('div');
+      processCard.className = 'card processing';
+      processCard.innerHTML = `
+        <div class="card-header">
+          <div class="circle-num">⌛</div>
+          <div class="card-title">ANALYZING SOURCE WITH GEMINI AI...</div>
+        </div>
+        <div class="card-body">Extracting context and generating comprehensive study guide. This may take up to 25 seconds...</div>
+      `;
+      guideContent.appendChild(processCard);
+
+      try {
+        const response = await fetch("/api/generate-study-guide", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: url, subject: "General" })
+        });
+        
+        const data = await response.json();
+        if (!response.ok) {
+            const errorMsg = data.detail || response.statusText;
+            guideContent.innerHTML = `
+                <div class="card">
+                    <div class="card-header"><div class="circle-num" style="background:#ff4444;">!</div><div class="card-title" style="color:#ff4444;">API ERROR</div></div>
+                    <div class="card-body" style="color: #ff4444; font-family: var(--font-mono); font-size: 0.85rem;">[ ERROR_LOG ]:<br>${errorMsg}</div>
+                </div>
+            `;
+            btnGenerateGuide.disabled = false;
+            urlInput.disabled = false;
+            sessionState.textContent = "ERROR";
+            return;
+        }
+        
+        renderGuide(data);
+      } catch (e) {
+          guideContent.innerHTML = `
+            <div class="card">
+                <div class="card-header"><div class="circle-num" style="background:#ff4444;">!</div><div class="card-title" style="color:#ff4444;">NETWORK ERROR</div></div>
+                <div class="card-body" style="color: #ff4444; font-family: var(--font-mono); font-size: 0.85rem;">${e.message}</div>
+            </div>
+          `;
+          btnGenerateGuide.disabled = false;
+          urlInput.disabled = false;
+          sessionState.textContent = "ERROR";
+      }
+    });
+
+    // --- FONT SCALING LOGIC ---
+    function applyFontScale() {
+      const guideCard = document.querySelector('#guideContent .study-guide-card');
+      if (guideCard) {
+        guideCard.style.fontSize = `${currentFontScale}rem`;
+      }
+    }
+
+    btnDecreaseFont.addEventListener('click', () => {
+      if (currentFontScale > 0.7) {
+        currentFontScale = Math.max(0.7, currentFontScale - 0.15);
+        applyFontScale();
+        saveState();
+      }
+    });
+
+    btnIncreaseFont.addEventListener('click', () => {
+      if (currentFontScale < 2.0) {
+        currentFontScale = Math.min(2.0, currentFontScale + 0.15);
+        applyFontScale();
+        saveState();
+      }
+    });
+
+    function renderGuide(data, skipSave = false) {
+      sessionState.textContent = "GUIDE_READY";
+      guideIdText.textContent = "ID: " + data.filename.toUpperCase();
+      guideContent.innerHTML = ''; // clear
+      lastGuideData = data; // Persist for download
+      if (!skipSave) allSeenQuestions = []; // Reset seen questions on new source
+      
+      const div = document.createElement('div');
+
+      div.className = 'card study-guide-card';
+      
+      const rawHtml = marked.parse(data.markdown);
+      
+      div.innerHTML = `
+        <div class="card-body markdown-body">
+            ${rawHtml}
+        </div>
+      `;
+      guideContent.appendChild(div);
+
+      btnBuildQuiz.disabled = false;
+      btnGenerateGuide.disabled = false;
+      btnDownload.disabled = false;
+      urlInput.disabled = (inputMode === 'file');
+      btnToggleEdit.style.display = 'block';
+      btnGenerateGuide.textContent = "REGENERATE";
+      if (!skipSave) saveState();
+      applyFontScale();
+    }
+
+    // --- DOWNLOAD EVENT HANDLERS ---
+    btnDownload.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isExpanded = downloadMenu.classList.toggle('show');
+      btnDownload.setAttribute('aria-expanded', isExpanded);
+    });
+
+    document.addEventListener('click', () => {
+      downloadMenu.classList.remove('show');
+      btnDownload.setAttribute('aria-expanded', 'false');
+    });
+
+    downloadMD.addEventListener('click', () => {
+      if (!lastGuideData) return;
+      const blob = new Blob([lastGuideData.markdown], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${lastGuideData.filename}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    downloadPDF.addEventListener('click', () => {
+      if (!lastGuideData) return;
+      
+      const element = document.getElementById('guideContent');
+      const opt = {
+        margin: [10, 10],
+        filename: `${lastGuideData.filename}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#0d1117' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+      
+      html2pdf().set(opt).from(element).save();
+    });
+
+    // 2. Build Quiz Flow
+    btnBuildQuiz.addEventListener('click', async () => {
+      const url = urlInput.value.trim();
+      sessionState.textContent = "BUILDING_QUIZ";
+      btnBuildQuiz.disabled = true;
+      
+      quizContent.innerHTML = `
+        <div class="card processing pulse">
+            <div class="card-header">
+                <div class="circle-num">🧠</div>
+                <div class="card-title">GENERATING HIGH-DEPTH QUIZ...</div>
+            </div>
+            <div class="card-body">Gemini AI is crafting 10 complex questions and granular rationales. This takes around 20-30 seconds...</div>
+        </div>
+      `;
+
+      try {
+        const formData = new FormData();
+        if (inputMode === 'file' || (lastGuideData && lastGuideData.source_url === "LOCAL_FILE")) {
+            // Send the current markdown (could be edited) as a file
+            const blob = new Blob([lastGuideData.markdown], { type: 'text/markdown' });
+            formData.append('file', blob, lastGuideData.filename || 'uploaded.md');
+        } else {
+            formData.append('url', url);
+        }
+        formData.append('subject', "General");
+        formData.append('exclude_titles', JSON.stringify(allSeenQuestions));
+
+        const response = await fetch("/api/build-quiz-from-url", {
+            method: "POST",
+            body: formData
+        });
+        
+        const data = await response.json();
+        if (!response.ok) {
+            const errorMsg = data.detail || response.statusText;
+            quizContent.innerHTML = `
+                <div class="card">
+                    <div class="card-header"><div class="circle-num" style="background:#ff4444;">!</div><div class="card-title" style="color:#ff4444;">API ERROR</div></div>
+                    <div class="card-body" style="color: #ff4444; font-family: var(--font-mono); font-size: 0.85rem;">[ ERROR_LOG ]:<br>${errorMsg}</div>
+                </div>
+            `;
+            btnBuildQuiz.disabled = false;
+            sessionState.textContent = "ERROR";
+            return;
+        }
+        
+        activeQuizData = data;
+        currentQuestionIndex = 0;
+        userResults = []; // Reset session progress
+        
+        // Track these questions so we don't see them again in "New Quiz"
+        if (data.questions) {
+            data.questions.forEach(q => {
+                if (!allSeenQuestions.includes(q.title)) allSeenQuestions.push(q.title);
+            });
+        }
+        
+        renderQuizQuestion();
+      } catch (e) {
+          quizContent.innerHTML = `
+            <div class="card">
+                <div class="card-header"><div class="circle-num" style="background:#ff4444;">!</div><div class="card-title" style="color:#ff4444;">NETWORK ERROR</div></div>
+                <div class="card-body" style="color: #ff4444; font-family: var(--font-mono); font-size: 0.85rem;">${e.message}</div>
+            </div>
+          `;
+          btnBuildQuiz.disabled = false;
+          sessionState.textContent = "ERROR";
+      }
+
+    });
+
+    function renderQuizQuestion(forceReveal = false, skipSave = false) {
+      if (!activeQuizData || !activeQuizData.questions || currentQuestionIndex >= activeQuizData.questions.length) {
+          renderQuizSummary(skipSave);
+          return;
+      }
+      
+      if (forceReveal) inReviewMode = true;
+      
+      sessionState.textContent = "RECALL_ALPHA";
+      const qNum = currentQuestionIndex + 1;
+      const totalQ = activeQuizData.questions.length;
+      quizCounter.textContent = `${qNum.toString().padStart(2, '0')} / ${totalQ.toString().padStart(2, '0')}`;
+      
+      btnBuildQuiz.disabled = false;
+      btnBuildQuiz.innerText = "REBUILD QUIZ";
+
+      const questionObj = activeQuizData.questions[currentQuestionIndex];
+      let optionsHtml = '';
+      questionObj.options.forEach((opt) => {
+        const parsedText = marked.parseInline(opt.text);
+        optionsHtml += `
+          <div class="quiz-option" data-letter="${opt.letter}">
+            <div class="quiz-option-text">${opt.letter}) ${parsedText}</div>
+            <div class="quiz-tag muted">SELECT</div>
+          </div>
+        `;
+      });
+
+      const bodyHtml = marked.parse(questionObj.body_markdown);
+      const parsedTitle = questionObj.title ? marked.parseInline(questionObj.title) : 'Question';
+      
+      quizContent.innerHTML = `
+        <div class="quiz-question-box">
+          <h3 style="margin-top:0; color:#ff5500;">${parsedTitle}</h3>
+          ${bodyHtml}
+        </div>
+        
+        <div id="hint-block" style="margin-top: 15px; margin-bottom: 15px; padding: 10px; background: rgba(255, 255, 255, 0.05); border-left: 3px solid #ffaa00; display:none; color: #000000; font-family: var(--font-mono); font-size: 0.9rem;">
+            <strong>Hint:</strong> <span id="hint-text"></span>
+        </div>
+
+        <div class="options-list">
+          ${optionsHtml}
+        </div>
+        
+        <div id="rationale-block" style="margin-top: 20px; display:none; padding:20px; border: 2px dashed #333; background: #0a0a0a;">
+            <p style="font-family: var(--font-mono); color: #fff; margin-top:0;"><strong>Correct Answer:</strong> <span id="rat-correct" style="color:#00ff00; font-size: 1.2rem;"></span></p>
+            <div id="rat-text" style="color: #cbd5e1; line-height: 1.6; font-size: 0.95rem;"></div>
+        </div>
+
+        <div id="submission-actions" style="margin-top: 20px;">
+          <button class="submit-quiz-btn" style="margin-bottom: 5px;">SUBMIT ANSWER</button>
+          <button class="btn btn-purple" id="btnNextQuestion" style="display:none; width:100%; border-radius: 4px;">NEXT QUESTION</button>
+        </div>
+
+        <div class="quiz-nav-group" id="review-actions" style="display: none;">
+          <button class="btn btn-purple" id="btnReviewPrev">PREVIOUS QUESTION</button>
+          <button class="btn btn-green" id="btnReviewRecap" style="font-size: 0.8rem;">RETURN TO RECAP</button>
+          <button class="btn btn-purple" id="btnReviewNext">NEXT QUESTION</button>
+        </div>
+      `;
+
+      const hintText = quizContent.querySelector('#hint-text');
+      if (questionObj.hint_markdown) {
+          hintText.innerHTML = marked.parseInline(questionObj.hint_markdown);
+          quizContent.querySelector('#hint-block').style.display = 'block';
+      }
+
+      // Wire option clicks
+      const opts = quizContent.querySelectorAll('.quiz-option');
+      opts.forEach(opt => {
+        opt.addEventListener('click', () => {
+          opts.forEach(o => {
+            o.classList.remove('active');
+            o.querySelector('.quiz-tag').classList.add('muted');
+            o.querySelector('.quiz-tag').innerText = 'SELECT';
+          });
+          opt.classList.add('active');
+          opt.querySelector('.quiz-tag').classList.remove('muted');
+          opt.querySelector('.quiz-tag').innerText = 'SELECTED';
+        });
+      });
+      
+      const submitBtn = quizContent.querySelector('.submit-quiz-btn');
+      const nextBtn = quizContent.querySelector('#btnNextQuestion');
+      const submissionActions = quizContent.querySelector('#submission-actions');
+      const reviewActions = quizContent.querySelector('#review-actions');
+      
+      if (inReviewMode) {
+          submissionActions.style.display = 'none';
+          reviewActions.style.display = 'flex';
+          
+          const btnPrev = document.getElementById('btnReviewPrev');
+          const btnNext = document.getElementById('btnReviewNext');
+          const btnRecap = document.getElementById('btnReviewRecap');
+          
+          btnPrev.disabled = (currentQuestionIndex === 0);
+          btnNext.disabled = (currentQuestionIndex === totalQ - 1);
+          
+          btnPrev.onclick = () => { currentQuestionIndex--; renderQuizQuestion(true); };
+          btnNext.onclick = () => { currentQuestionIndex++; renderQuizQuestion(true); };
+          btnRecap.onclick = () => { inReviewMode = false; renderQuizSummary(); };
+
+          // Show results immediately
+          const result = userResults.find(r => r.qIdx === currentQuestionIndex);
+          if (result) {
+              const userOpt = quizContent.querySelector(`.quiz-option[data-letter="${result.userLetter}"]`);
+              if (userOpt) {
+                  userOpt.classList.add('active');
+                  userOpt.querySelector('.quiz-tag').innerText = 'SELECTED';
+                  userOpt.style.borderColor = result.isCorrect ? '#00ff00' : '#ff4444';
+              }
+              // If wrong, highlight correct one too
+              if (!result.isCorrect) {
+                  const correctOpt = quizContent.querySelector(`.quiz-option[data-letter="${result.correctLetter}"]`);
+                  if (correctOpt) correctOpt.style.borderColor = '#00ff00';
+              }
+          }
+      } else {
+          if (currentQuestionIndex === totalQ - 1) {
+              nextBtn.innerText = "REVIEW QUIZ";
+          }
+      }
+      
+      const rationaleBlock = quizContent.querySelector('#rationale-block');
+      const ratCorrect = quizContent.querySelector('#rat-correct');
+      const ratText = quizContent.querySelector('#rat-text');
+
+      const populateReview = () => {
+          ratCorrect.textContent = questionObj.correct_answer;
+          let rHTML = "<ul style='padding-left: 20px;'>";
+          if (questionObj.rationale) {
+              questionObj.rationale.forEach(r => {
+                   const prefix = r.letter ? `<strong>${r.letter})</strong> ` : "";
+                   rHTML += "<li style='margin-bottom:8px;'>" + prefix + marked.parseInline(r.text || '') + "</li>";
+              });
+          }
+          rHTML += "</ul>";
+          ratText.innerHTML = rHTML;
+          rationaleBlock.style.display = 'block';
+          opts.forEach(o => o.style.pointerEvents = 'none');
+      };
+
+      if (inReviewMode) {
+          populateReview();
+          const result = userResults.find(r => r.qIdx === currentQuestionIndex);
+          if (result && !result.isCorrect) {
+              rationaleBlock.style.borderColor = '#ff4444';
+          } else {
+              rationaleBlock.style.borderColor = '#00ff00';
+          }
+      }
+
+
+      if (!skipSave) saveState();
+
+      submitBtn.addEventListener('click', () => {
+        const active = quizContent.querySelector('.quiz-option.active');
+        if(!active) return alert("Select an option first.");
+        
+        const letter = active.getAttribute('data-letter');
+        populateReview();
+        
+        if (letter === questionObj.correct_answer) {
+            rationaleBlock.style.borderColor = '#00ff00';
+            active.style.borderColor = '#00ff00';
+            userResults.push({ qIdx: currentQuestionIndex, userLetter: letter, isCorrect: true, title: questionObj.title, correctLetter: questionObj.correct_answer });
+        } else {
+            rationaleBlock.style.borderColor = '#ff4444';
+            active.style.borderColor = '#ff4444';
+            userResults.push({ qIdx: currentQuestionIndex, userLetter: letter, isCorrect: false, title: questionObj.title, correctLetter: questionObj.correct_answer });
+            opts.forEach(o => {
+                if (o.getAttribute('data-letter') === questionObj.correct_answer) {
+                    o.style.borderColor = '#00ff00';
+                }
+            });
+        }
+        
+        submitBtn.style.display = 'none';
+        nextBtn.style.display = 'block';
+        saveState();
+      });
+      
+      nextBtn.addEventListener('click', () => {
+          if (inReviewMode) {
+              inReviewMode = false;
+              renderQuizSummary();
+          } else {
+              currentQuestionIndex++;
+              renderQuizQuestion();
+          }
+      });
+    }
+
+    function renderQuizSummary(skipSave = false) {
+      sessionState.textContent = "QUIZ_RECAP";
+      inReviewMode = false;
+      const correctCount = userResults.filter(r => r.isCorrect).length;
+      const totalCount = activeQuizData.questions.length;
+      quizCounter.textContent = "COMPLETE";
+
+      let resultsHtml = '';
+      userResults.forEach(res => {
+        const statusClass = res.isCorrect ? 'correct' : 'wrong';
+        const userClass = res.isCorrect ? 'user-correct' : 'user-wrong';
+        
+        resultsHtml += `
+          <div class="result-row ${statusClass}">
+            <div class="result-q-title">${res.title}</div>
+            <div class="result-answers">
+              <div class="res-ans ${userClass}">
+                <strong>YOURS:</strong> ${res.userLetter}
+              </div>
+              <div class="res-ans actual">
+                <strong>CORRECT:</strong> ${res.correctLetter}
+              </div>
+            </div>
+          </div>
+        `;
+      });
+
+      quizContent.innerHTML = `
+        <div class="results-header">
+          <div class="score-display">${correctCount}/${totalCount}</div>
+          <div class="score-label">ACHIEVED_SCORE</div>
+        </div>
+
+        <div class="summary-actions" style="margin-bottom: 32px;">
+          <button class="btn btn-orange" id="btnRestart">RESTART QUIZ</button>
+          <button class="btn btn-purple" id="btnNewSet">NEW QUIZ</button>
+          <button class="btn btn-green" id="btnReviewAll" style="grid-column: span 2; margin-top: 10px;">REVIEW ALL QUESTIONS</button>
+        </div>
+
+        <div class="results-list">
+          ${resultsHtml}
+        </div>
+      `;
+
+      // Wire up clicks for detailed review
+      const rows = quizContent.querySelectorAll('.result-row');
+      rows.forEach((row, idx) => {
+        row.addEventListener('click', () => {
+          currentQuestionIndex = idx;
+          renderQuizQuestion(true);
+        });
+      });
+
+      document.getElementById('btnReviewAll').addEventListener('click', () => {
+          currentQuestionIndex = 0;
+          renderQuizQuestion(true);
+      });
+
+      // Restart: Just reset indices and results
+      document.getElementById('btnRestart').addEventListener('click', () => {
+        currentQuestionIndex = 0;
+        userResults = [];
+        renderQuizQuestion();
+      });
+
+      // New Set: Trigger the original Build Quiz button logic
+      document.getElementById('btnNewSet').addEventListener('click', () => {
+        btnBuildQuiz.click();
+      });
+
+      if(!skipSave) saveState();
+    }
+
+    // Initialize State
+    window.addEventListener('load', loadState);
+
+
+  </script>
+</body>
+</html>
