@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 *.txt
+!requirements.txt
 check_models.py
 .env
 .vercel/
