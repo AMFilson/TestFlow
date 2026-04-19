@@ -1,7 +1,7 @@
 # TestFlow // AI Enhanced Learning Platform
 
 TestFlow is a web application that provides a unified dashboard for study guide generation and interactive quiz building from a single interface. 
-It is live at: [https://testflow-zeta.vercel.app](https://testflow-zeta.vercel.app)
+It is live at: [https://www.testflowai.org](https://www.testflowai.org)
 
 ## Key Features
 
