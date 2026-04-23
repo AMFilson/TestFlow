@@ -381,39 +381,15 @@ def build_study_guide_markdown(
 
 
 async def stream_study_guide_markdown(
-    url: Optional[str],
+    payload: dict,
     subject: str,
-    topic_override: Optional[str],
-    file: Optional[UploadFile] = None
+    topic_title: str,
+    url_to_report: str
 ):
     if not GOOGLE_API_KEY:
         raise HTTPException(status_code=500, detail="GOOGLE_API_KEY environment variable is not configured.")
 
-    if file:
-        file_bytes = file.file.read()
-        if file.filename and file.filename.lower().endswith(".pdf"):
-            payload = _extract_pdf_payload(io.BytesIO(file_bytes), file.filename)
-            source_label = file.filename
-        else:
-            text_content = file_bytes.decode("utf-8", errors="ignore")
-            payload = {
-                "title": file.filename or "Uploaded File",
-                "headings": [],
-                "code_samples": [],
-                "text": text_content,
-                "domain": "LOCAL_FILE",
-                "path": file.filename or "uploaded.txt",
-            }
-            source_label = file.filename or "LOCAL_FILE"
-        
-        topic_title = topic_override or payload["title"]
-        url_to_report = source_label
-    else:
-        if not url:
-            raise HTTPException(status_code=400, detail="Either URL or File must be provided.")
-        payload = _extract_page_payload(url)
-        topic_title = _pick_topic_title(payload, topic_override, subject, url)
-        url_to_report = url
+    # Payload and metadata are now passed in
 
     content_excerpt = _render_source_excerpt(payload, "", limit_chars=35000)
 
@@ -439,32 +415,42 @@ async def generate_study_guide_stream(
     subject: str = Form("General"),
     topic: Optional[str] = Form(None)
 ) -> StreamingResponse:
-    # We need to get the filename and title BEFORE starting the stream to put them in headers.
-    # To avoid double processing (fetching URL twice), we can extract the metadata here.
-    
     source_label = "UPLOADED_FILE"
     topic_title = topic or "Study Guide"
+    payload = None
     
     if file:
-        source_label = file.filename or "LOCAL_FILE"
+        file_bytes = await file.read()
+        if not file_bytes:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+            
         if file.filename and file.filename.lower().endswith(".pdf"):
-             # We don't want to read the whole file twice, so we can seek back.
-             # But for simplicity, let's just use the filename for headers.
-             topic_title = topic or file.filename
+             payload = _extract_pdf_payload(io.BytesIO(file_bytes), file.filename)
+             source_label = file.filename
+             topic_title = topic or payload["title"]
         else:
-             topic_title = topic or file.filename or "Uploaded File"
+             text_content = file_bytes.decode("utf-8", errors="ignore")
+             payload = {
+                "title": file.filename or "Uploaded File",
+                "headings": [],
+                "code_samples": [],
+                "text": text_content,
+                "domain": "LOCAL_FILE",
+                "path": file.filename or "uploaded.txt",
+             }
+             source_label = file.filename or "LOCAL_FILE"
+             topic_title = topic or payload["title"]
     elif url:
-        # For URL, we'd need to fetch to get the title. 
-        # Let's just use a placeholder and the frontend can update it later if needed, 
-        # or we can do a quick fetch for title only.
-        parsed = urlparse(url)
-        topic_title = topic or (parsed.path.split('/')[-1] if parsed.path else "Study Guide")
+        payload = _extract_page_payload(url)
+        topic_title = _pick_topic_title(payload, topic, subject, url)
         source_label = url
+    else:
+        raise HTTPException(status_code=400, detail="Either URL or File must be provided.")
 
     filename = f"{_slugify(subject)}_{_slugify(topic_title)}_study_guide.md"
 
     return StreamingResponse(
-        stream_study_guide_markdown(url, subject, topic, file),
+        stream_study_guide_markdown(payload, subject, topic_title, source_label),
         media_type="text/plain",
         headers={
             "X-Filename": filename,
