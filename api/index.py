@@ -1,11 +1,10 @@
-from __future__ import annotations
 
 from collections import Counter
 import html as html_module
 import os
 import re
 from pathlib import Path
-from typing import List, Optional, Dict, TypedDict
+from typing import List, Optional, Dict, TypedDict, Annotated
 from urllib.error import URLError, HTTPError
 from urllib.parse import urlparse
 from urllib.request import Request as URLLibRequest, urlopen
@@ -360,7 +359,7 @@ Source: [URL]
 ## Answer Key
 [Provide full, comprehensive answers to the 5 Active Recall questions above.]
 
-Tone: Professional, concise, logically dense, no filler fluff. Bold critical keywords. NEVER deviate from this exact markdown heading structure.
+Tone: Professional, concise, logically dense, no filler fluff. Bold critical keywords. Use standard Unicode arrows (e.g., →) for mappings; NEVER use LaTeX syntax like $\rightarrow$. For abbreviations or short forms (e.g., perf, op), always state the full word followed by the short form in brackets, e.g., "Performance (perf)" or "Operational (op)". NEVER deviate from this exact markdown heading structure.
 """
 
 
@@ -460,6 +459,7 @@ CRITICAL RULES:
 - There must be a blank line between `</details>` and `---`.
 - There must be a blank line after the `<summary>` tags inside the `<details>` blocks before the actual content to ensure markdown parses correctly.
 - NEVER invent HTML attributes or functions that do not exist in the source context.
+- Use standard Unicode arrows (e.g., →) for mappings; NEVER use LaTeX syntax like $\rightarrow$.
 - Your output must consist ONLY of the questions in this format, starting with `### Question 1:`.
 """
 
@@ -669,7 +669,6 @@ def parse_quiz_markdown(markdown_text: str) -> List[QuizQuestion]:
 
 
 
-@app.get("/favicon.ico", include_in_schema=False)
 @app.get("/icon.ico", include_in_schema=False)
 async def serve_favicon():
     icon_path = Path(__file__).parent.parent / "images" / "icon.ico"
@@ -716,10 +715,10 @@ async def upload_quiz(file: UploadFile = File(...)) -> ParsedQuiz:
 @limiter.limit("5/minute")
 async def generate_study_guide(
     request: Request,
-    url: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None),
-    subject: str = Form("General"),
-    topic: Optional[str] = Form(None)
+    url: Annotated[Optional[str], Form()] = None,
+    file: Annotated[Optional[UploadFile], File()] = None,
+    subject: Annotated[str, Form()] = "General",
+    topic: Annotated[Optional[str], Form()] = None
 ) -> StudyGuideResponse:
     return build_study_guide_markdown(url, subject, topic, file=file)
 
@@ -728,11 +727,11 @@ async def generate_study_guide(
 @limiter.limit("5/minute")
 async def build_quiz_from_url(
     request: Request,
-    url: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None),
-    subject: str = Form("General"),
-    topic: Optional[str] = Form(None),
-    exclude_titles: str = Form("[]")
+    url: Annotated[Optional[str], Form()] = None,
+    file: Annotated[Optional[UploadFile], File()] = None,
+    subject: Annotated[str, Form()] = "General",
+    topic: Annotated[Optional[str], Form()] = None,
+    exclude_titles: Annotated[str, Form()] = "[]"
 ) -> ParsedQuiz:
     file_bytes = None
     filename = None
