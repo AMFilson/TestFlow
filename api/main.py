@@ -397,11 +397,10 @@ async def stream_study_guide_markdown(
         model = genai.GenerativeModel("gemini-3.1-flash-lite-preview", system_instruction=STUDY_GUIDE_SYSTEM_PROMPT)
         prompt = f"Target Subject: {subject}\nTopic Override: {topic_title}\nSource: {url_to_report}\n\nCONTENT TO SYNTHESIZE:\n{content_excerpt}"
         
-        response = model.generate_content(prompt, stream=True)
+        # Using the async streaming method
+        response = await model.generate_content_async(prompt, stream=True)
         
-        # Yield metadata as the first chunk, or just rely on headers. 
-        # Using headers is cleaner for the frontend.
-        for chunk in response:
+        async for chunk in response:
             if chunk.text:
                 yield chunk.text
     except Exception as e:
@@ -455,6 +454,9 @@ async def generate_study_guide_stream(
         headers={
             "X-Filename": filename,
             "X-Source-Title": topic_title,
+            "X-Accel-Buffering": "no", # Critical for Vercel/Nginx streaming
+            "Cache-Control": "no-cache, no-transform",
+            "Content-Type": "text/plain; charset=utf-8",
             "Access-Control-Expose-Headers": "X-Filename, X-Source-Title"
         }
     )
