@@ -390,17 +390,20 @@
       
       guideContent.innerHTML = '';
       
-      // Phase 1: Processing
-      const processCard = document.createElement('div');
-      processCard.className = 'card processing';
-      processCard.innerHTML = `
-        <div class="card-header">
-          <div class="circle-num">⌛</div>
-          <div class="card-title">${isPDF ? 'EXTRACTING PDF TEXT...' : 'ANALYZING SOURCE...'}</div>
+      guideContent.innerHTML = `
+        <div class="skeleton-card">
+          <div class="skeleton-header"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line medium"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+          <br>
+          <div class="skeleton-header" style="width: 40%"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line medium"></div>
+          <div class="skeleton-line"></div>
         </div>
-        <div class="card-body">Connecting to Gemini AI for real-time streaming...</div>
       `;
-      guideContent.appendChild(processCard);
 
       try {
         let response;
@@ -432,22 +435,8 @@
             return;
         }
 
-        // Initial skeleton container
+        // Phase 2: JSON Parsing
         sessionState.textContent = "GENERATING_CONTENT";
-        guideContent.innerHTML = `
-            <div class="skeleton-card">
-                <div class="skeleton-header"></div>
-                <div class="skeleton-line"></div>
-                <div class="skeleton-line medium"></div>
-                <div class="skeleton-line"></div>
-                <div class="skeleton-line short"></div>
-                <br>
-                <div class="skeleton-header" style="width: 40%"></div>
-                <div class="skeleton-line"></div>
-                <div class="skeleton-line medium"></div>
-                <div class="skeleton-line"></div>
-            </div>
-        `;
 
         const data = await response.json();
         
@@ -460,10 +449,15 @@
         renderGuide(finalData); 
 
       } catch (e) {
+          console.error("GENERATE_ERROR:", e);
+          let displayMsg = e.message;
+          if (e.message.includes("is not valid JSON")) {
+              displayMsg = "Server returned an invalid response (Internal Server Error). Check Vercel logs for diagnostic print statements.";
+          }
           guideContent.innerHTML = `
             <div class="card">
                 <div class="card-header"><div class="circle-num" style="background:#ff4444;">!</div><div class="card-title" style="color:#ff4444;">NETWORK ERROR</div></div>
-                <div class="card-body" style="color: #ff4444; font-family: var(--font-mono); font-size: 0.85rem;">${e.message}</div>
+                <div class="card-body" style="color: #ff4444; font-family: var(--font-mono); font-size: 0.85rem;">${displayMsg}</div>
             </div>
           `;
           btnGenerateGuide.disabled = false;

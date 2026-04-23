@@ -12,7 +12,7 @@ from urllib.request import Request as URLLibRequest, urlopen
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import json
@@ -27,7 +27,10 @@ from fastapi.exceptions import RequestValidationError
 # Setup Gemini API (Make sure GOOGLE_API_KEY is in Vercel Env Vars)
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 if GOOGLE_API_KEY:
+    print(f"GOOGLE_API_KEY is configured (starts with {GOOGLE_API_KEY[:4]}...)")
     genai.configure(api_key=GOOGLE_API_KEY)
+else:
+    print("WARNING: GOOGLE_API_KEY is NOT configured in environment.")
 
 
 class PayloadDict(TypedDict):
@@ -113,6 +116,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print(f"GLOBAL EXCEPTION: {type(exc).__name__}: {exc}")
+    import traceback
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal Server Error: {type(exc).__name__}: {str(exc)}"},
+    )
 
 
 QUESTION_HEADER_RE = re.compile(r"^###\s+Question\s+(\d+)\s*[:.]?\s*(.+)$", re.MULTILINE)
@@ -357,6 +370,7 @@ def build_study_guide_markdown(
     topic_override: Optional[str],
     file: Optional[UploadFile] = None
 ) -> StudyGuideResponse:
+    print(f"BUILD_STUDY_GUIDE: url={url}, subject={subject}, topic={topic_override}, file={file.filename if file else 'None'}")
     if not GOOGLE_API_KEY:
         raise HTTPException(status_code=500, detail="GOOGLE_API_KEY environment variable is not configured.")
 
@@ -393,7 +407,9 @@ def build_study_guide_markdown(
         model = genai.GenerativeModel("gemini-3.1-flash-lite-preview", system_instruction=STUDY_GUIDE_SYSTEM_PROMPT)
         prompt = f"Target Subject: {subject}\nTopic Override: {topic_title}\nSource: {url_to_report}\n\nCONTENT TO SYNTHESIZE:\n{content_excerpt}"
         
+        print(f"GEMINI_PROMPT_START: model=gemini-3.1-flash-lite-preview")
         response = model.generate_content(prompt)
+        print(f"GEMINI_PROMPT_END: success")
         markdown = response.text.replace("```markdown", "").replace("```", "").strip() + "\n"
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini API Error: {e}")
