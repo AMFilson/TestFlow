@@ -14,6 +14,11 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <!-- PDF Generator -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <!-- PDF Parser for large files -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
   <!-- Vercel Analytics -->
   <script>
     window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
@@ -136,6 +141,7 @@
     // --- APP STATE ---
     let inputMode = 'url'; // 'url' or 'file'
     let uploadedFile = null;
+    let uploadedFileText = null;
     let isEditing = false;
     let currentQuestionIndex = 0;
     let userResults = []; // Track { qIdx, userLetter, isCorrect }
@@ -195,6 +201,21 @@
         }
         throw error;
       }
+    }
+
+    // --- PDF TEXT EXTRACTION ---
+    async function extractTextFromPDF(file) {
+      const arrayBuffer = await file.arrayBuffer();
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
+      let fullText = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(" ");
+        fullText += pageText + "\n";
+      }
+      return fullText.trim();
     }
 
     // --- SIMPLE HASH FUNCTION FOR DUPLICATE DETECTION ---
@@ -303,13 +324,14 @@
         if (file) handleFile(file);
     });
 
-    function handleFile(file) {
+    async function handleFile(file) {
         const isMD = file.name.endsWith('.md');
         const isPDF = file.name.endsWith('.pdf');
         
         if (!isMD && !isPDF) return alert(CONSTANTS.ERROR_MESSAGES.FILE_INVALID);
         
         uploadedFile = file;
+        uploadedFileText = null; // Reset
         setFileModeUI(file.name);
 
         if (isMD) {
@@ -326,18 +348,38 @@
             };
             reader.readAsText(file);
         } else {
-            // PDF: Show a placeholder until they click Generate
+            // PDF: Extract text in browser to avoid Vercel 4.5MB limit
+            sessionState.textContent = "PARSING_PDF";
             guideContent.innerHTML = `
                 <div style="font-family: var(--font-mono); color: #888; margin-top: 40px; text-align: center;">
-                  [ PDF_READY: "${file.name}" ]<br>
-                  <span style="font-size: 0.8rem; opacity: 0.7;">CLICK 'GENERATE STUDY GUIDE' TO BEGIN ANALYSIS</span>
+                  [ ANALYZING_PDF: "${file.name}" ]<br>
+                  <span id="pdfStatus" style="font-size: 0.8rem; opacity: 0.7;">EXTRACTING TEXT...</span>
                 </div>
             `;
+            try {
+                uploadedFileText = await extractTextFromPDF(file);
+                if (!uploadedFileText) {
+                    throw new Error(CONSTANTS.ERROR_MESSAGES.EMPTY_PDF);
+                }
+                document.getElementById('pdfStatus').textContent = "READY FOR GENERATION";
+                sessionState.textContent = "PDF_LOADED";
+            } catch (err) {
+                console.error("PDF Extraction Error:", err);
+                guideContent.innerHTML = `
+                    <div class="card">
+                        <div class="card-header"><div class="circle-num" style="background:#ff4444;">!</div><div class="card-title" style="color:#ff4444;">PDF ERROR</div></div>
+                        <div class="card-body" style="color: #ff4444; font-family: var(--font-mono); font-size: 0.85rem;">${err.message}</div>
+                    </div>
+                `;
+                sessionState.textContent = "ERROR";
+                uploadedFile = null;
+                return;
+            }
+            
             btnBuildQuiz.disabled = true;
             btnDownload.disabled = true;
             btnGenerateGuide.disabled = false;
             btnGenerateGuide.textContent = "GENERATE STUDY GUIDE";
-            sessionState.textContent = "PDF_LOADED";
         }
     }
 
@@ -409,7 +451,13 @@
         let response;
         const formData = new FormData();
         if (inputMode === 'file' && isPDF) {
-            formData.append('file', uploadedFile);
+            // If we have extracted text, send it as a .txt file blob to bypass the large PDF binary payload
+            if (uploadedFileText) {
+                const textBlob = new Blob([uploadedFileText], { type: 'text/plain' });
+                formData.append('file', textBlob, uploadedFile.name + ".txt");
+            } else {
+                formData.append('file', uploadedFile);
+            }
         } else if (inputMode === 'url') {
             formData.append('url', url);
         }
@@ -585,7 +633,12 @@
 
         if (inputMode === 'file') {
             if (isPDF) {
-                formData.append('file', uploadedFile);
+                if (uploadedFileText) {
+                    const textBlob = new Blob([uploadedFileText], { type: 'text/plain' });
+                    formData.append('file', textBlob, uploadedFile.name + ".txt");
+                } else {
+                    formData.append('file', uploadedFile);
+                }
             } else {
                 // For MD files, send the CURRENT markdown (it might be edited)
                 const blob = new Blob([lastGuideData.markdown], { type: 'text/markdown' });
