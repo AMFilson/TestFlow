@@ -5,26 +5,39 @@ import html as html_module
 import os
 import re
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, TypedDict
 from urllib.error import URLError, HTTPError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import json
 import io
 import pypdf
 import google.generativeai as genai
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi.exceptions import RequestValidationError
 
 # Setup Gemini API (Make sure GOOGLE_API_KEY is in Vercel Env Vars)
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
 
+
+class PayloadDict(TypedDict):
+    """Type definition for content payload"""
+    title: str
+    headings: List[str]
+    code_samples: List[str]
+    text: str
+    domain: str
+    path: str
 
 class QuizOption(BaseModel):
     letter: str
@@ -83,9 +96,19 @@ class QuizPromptResponse(BaseModel):
 
 app = FastAPI(title="Markdown Quiz Parser", version="1.0.0")
 
+# Setup rate limiter: 30 requests per minute per IP for general endpoints
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://testflowai.org",
+        "https://www.testflowai.org",
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -138,6 +161,7 @@ def _clean_text(value: str) -> str:
 
 
 def _extract_page_payload(url: str) -> dict:
+    def _extract_page_payload(url: str) -> PayloadDict:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise HTTPException(status_code=400, detail="Enter a valid http or https URL.")
@@ -192,6 +216,7 @@ def _extract_page_payload(url: str) -> dict:
 
 
 def _extract_pdf_payload(fileobj: io.BytesIO, filename: str) -> dict:
+    def _extract_pdf_payload(fileobj: io.BytesIO, filename: str) -> PayloadDict:
     try:
         reader = pypdf.PdfReader(fileobj)
         text_parts = []
@@ -199,6 +224,10 @@ def _extract_pdf_payload(fileobj: io.BytesIO, filename: str) -> dict:
             text_parts.append(page.extract_text() or "")
         
         full_text = "\n".join(text_parts).strip()
+        
+        # Validate that PDF has extractable text
+        if not full_text:
+            raise HTTPException(status_code=400, detail="PDF contains no extractable text. Please ensure the PDF is not empty, scanned without OCR, or password-protected.")
         
         # Use filename as title if no metadata
         title = filename
@@ -380,87 +409,6 @@ def build_study_guide_markdown(
     )
 
 
-async def stream_study_guide_markdown(
-    payload: dict,
-    subject: str,
-    topic_title: str,
-    url_to_report: str
-):
-    if not GOOGLE_API_KEY:
-        raise HTTPException(status_code=500, detail="GOOGLE_API_KEY environment variable is not configured.")
-
-    # Payload and metadata are now passed in
-
-    content_excerpt = _render_source_excerpt(payload, "", limit_chars=35000)
-
-    try:
-        model = genai.GenerativeModel("gemini-3.1-flash-lite-preview", system_instruction=STUDY_GUIDE_SYSTEM_PROMPT)
-        prompt = f"Target Subject: {subject}\nTopic Override: {topic_title}\nSource: {url_to_report}\n\nCONTENT TO SYNTHESIZE:\n{content_excerpt}"
-        
-        # Using the async streaming method
-        response = await model.generate_content_async(prompt, stream=True)
-        
-        async for chunk in response:
-            if chunk.text:
-                yield chunk.text
-    except Exception as e:
-        yield f"\n\n[ERROR]: {str(e)}"
-
-
-@app.post("/api/generate-study-guide-stream")
-async def generate_study_guide_stream(
-    url: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None),
-    subject: str = Form("General"),
-    topic: Optional[str] = Form(None)
-) -> StreamingResponse:
-    source_label = "UPLOADED_FILE"
-    topic_title = topic or "Study Guide"
-    payload = None
-    
-    if file:
-        file_bytes = await file.read()
-        if not file_bytes:
-            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-            
-        if file.filename and file.filename.lower().endswith(".pdf"):
-             payload = _extract_pdf_payload(io.BytesIO(file_bytes), file.filename)
-             source_label = file.filename
-             topic_title = topic or payload["title"]
-        else:
-             text_content = file_bytes.decode("utf-8", errors="ignore")
-             payload = {
-                "title": file.filename or "Uploaded File",
-                "headings": [],
-                "code_samples": [],
-                "text": text_content,
-                "domain": "LOCAL_FILE",
-                "path": file.filename or "uploaded.txt",
-             }
-             source_label = file.filename or "LOCAL_FILE"
-             topic_title = topic or payload["title"]
-    elif url:
-        payload = _extract_page_payload(url)
-        topic_title = _pick_topic_title(payload, topic, subject, url)
-        source_label = url
-    else:
-        raise HTTPException(status_code=400, detail="Either URL or File must be provided.")
-
-    filename = f"{_slugify(subject)}_{_slugify(topic_title)}_study_guide.md"
-
-    return StreamingResponse(
-        stream_study_guide_markdown(payload, subject, topic_title, source_label),
-        media_type="text/plain",
-        headers={
-            "X-Filename": filename,
-            "X-Source-Title": topic_title,
-            "X-Accel-Buffering": "no", # Critical for Vercel/Nginx streaming
-            "Cache-Control": "no-cache, no-transform",
-            "Content-Type": "text/plain; charset=utf-8",
-            "Access-Control-Expose-Headers": "X-Filename, X-Source-Title"
-        }
-    )
-
 
 QUIZ_SYSTEM_PROMPT = """You are TestFlow's Quiz Architect. Your task is to generate a high-depth practice quiz from the provided documentation.
 
@@ -501,23 +449,24 @@ CRITICAL RULES:
 - Your output must consist ONLY of the questions in this format, starting with `### Question 1:`.
 """
 
-def generate_ai_quiz(url: Optional[str], subject: str, topic_override: Optional[str], exclude_titles: List[str] = [], file: Optional[UploadFile] = None) -> ParsedQuiz:
+def generate_ai_quiz(url: Optional[str], subject: str, topic_override: Optional[str], exclude_titles: List[str] = [], file_bytes: Optional[bytes] = None, filename: Optional[str] = None) -> ParsedQuiz:
     if not GOOGLE_API_KEY:
         raise HTTPException(status_code=500, detail="GOOGLE_API_KEY is not configured.")
 
-    if file:
-        file_bytes = file.file.read()
-        if file.filename and file.filename.lower().endswith(".pdf"):
-            payload = _extract_pdf_payload(io.BytesIO(file_bytes), file.filename)
+    if file_bytes:
+        if filename and filename.lower().endswith(".pdf"):
+            payload = _extract_pdf_payload(io.BytesIO(file_bytes), filename)
         else:
-            text_content = file_bytes.decode("utf-8", errors="ignore")
+            text_content = file_bytes.decode("utf-8", errors="ignore").strip()
+            if not text_content:
+                raise HTTPException(status_code=400, detail="Uploaded markdown file is empty. Please ensure the file contains text content.")
             payload = {
-                "title": file.filename or "Uploaded File",
+                "title": filename or "Uploaded File",
                 "headings": [],
                 "code_samples": [],
                 "text": text_content,
                 "domain": "LOCAL_FILE",
-                "path": file.filename or "uploaded.txt",
+                "path": filename or "uploaded.txt",
             }
         topic_title = topic_override or payload["title"]
         content_excerpt = _render_source_excerpt(payload, "", limit_chars=30000)
@@ -750,6 +699,7 @@ async def upload_quiz(file: UploadFile = File(...)) -> ParsedQuiz:
 
 
 @app.post("/api/generate-study-guide", response_model=StudyGuideResponse)
+@limiter.limit("5/minute")
 async def generate_study_guide(
     url: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
@@ -760,6 +710,7 @@ async def generate_study_guide(
 
 
 @app.post("/api/build-quiz-from-url", response_model=ParsedQuiz)
+@limiter.limit("5/minute")
 async def build_quiz_from_url(
     url: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
@@ -767,17 +718,18 @@ async def build_quiz_from_url(
     topic: Optional[str] = Form(None),
     exclude_titles: str = Form("[]")
 ) -> ParsedQuiz:
-    source_text = None
+    file_bytes = None
+    filename = None
     if file:
-        raw = await file.read()
-        source_text = raw.decode("utf-8", errors="ignore")
+        file_bytes = await file.read()
+        filename = file.filename
     
     try:
         excludes = json.loads(exclude_titles)
     except:
         excludes = []
 
-    return generate_ai_quiz(url, subject, topic, excludes, file=file)
+    return generate_ai_quiz(url, subject, topic, excludes, file_bytes=file_bytes, filename=filename)
 
 
 if __name__ == "__main__":

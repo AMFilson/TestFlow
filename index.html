@@ -145,6 +145,79 @@
     let lastGuideData = null;
     let currentFontScale = 1.0;
 
+    // --- CONSTANTS ---
+    const CONSTANTS = {
+      FONT_SCALE_MIN: 0.7,
+      FONT_SCALE_MAX: 2.0,
+      FONT_SCALE_STEP: 0.15,
+      API_TIMEOUT_MS: 60000,
+      DEBOUNCE_SAVE_MS: 1000,
+      STORAGE_KEY: 'testflow_v1_state',
+      GUIDE_CHAR_LIMIT: 30000,
+      ERROR_MESSAGES: {
+        EMPTY_PDF: 'PDF contains no extractable text. Please ensure the PDF is not empty, scanned with OCR, or not password-protected.',
+        EMPTY_MARKDOWN: 'Uploaded markdown file is empty. Please ensure the file contains text content.',
+        NO_SOURCE: 'Either URL or file must be provided.',
+        NO_URL: 'Please enter a URL first.',
+        NO_FILE: 'Please upload a file first.',
+        NO_OPTION_SELECTED: 'Select an option first.',
+        URL_INVALID: 'Please enter a valid URL (http:// or https://).',
+        FILE_INVALID: 'Please upload a .md or .pdf file.',
+        NETWORK_ERROR: 'Network error: ',
+        REQUEST_TIMEOUT: 'Request timeout. The server took too long to respond.',
+        API_ERROR: 'API Error: '
+      }
+    };
+
+    // --- DEBOUNCED SAVE STATE ---
+    let saveStateTimeout = null;
+    function debouncedSaveState() {
+      if (saveStateTimeout) clearTimeout(saveStateTimeout);
+      saveStateTimeout = setTimeout(saveState, CONSTANTS.DEBOUNCE_SAVE_MS);
+    }
+
+    // --- FETCH WITH TIMEOUT HELPER ---
+    async function fetchWithTimeout(url, options = {}, timeoutMs = 60000) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        return response;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error(CONSTANTS.ERROR_MESSAGES.REQUEST_TIMEOUT);
+        }
+        throw error;
+      }
+    }
+
+    // --- SIMPLE HASH FUNCTION FOR DUPLICATE DETECTION ---
+    function quickHash(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+      }
+      return hash.toString(36);
+    }
+
+    // --- URL VALIDATION ---
+    function isValidUrl(urlString) {
+      try {
+        const url = new URL(urlString);
+        return url.protocol === 'http:' || url.protocol === 'https:';
+      } catch (e) {
+        return false;
+      }
+    }
+
     // --- PERSISTENCE ---
     function saveState() {
       const state = {
@@ -159,11 +232,11 @@
         inputMode,
         lastGuideData
       };
-      localStorage.setItem('testflow_v1_state', JSON.stringify(state));
+      localStorage.setItem(CONSTANTS.STORAGE_KEY, JSON.stringify(state));
     }
 
     function loadState() {
-      const saved = localStorage.getItem('testflow_v1_state');
+      const saved = localStorage.getItem(CONSTANTS.STORAGE_KEY);
       if (saved) {
         try {
           const state = JSON.parse(saved);
@@ -234,7 +307,7 @@
         const isMD = file.name.endsWith('.md');
         const isPDF = file.name.endsWith('.pdf');
         
-        if (!isMD && !isPDF) return alert("Please upload a .md or .pdf file.");
+        if (!isMD && !isPDF) return alert(CONSTANTS.ERROR_MESSAGES.FILE_INVALID);
         
         uploadedFile = file;
         setFileModeUI(file.name);
@@ -305,8 +378,9 @@
     btnGenerateGuide.addEventListener('click', async () => {
       const url = urlInput.value.trim();
       
-      if (inputMode === 'url' && !url) return alert("Please enter a URL first.");
-      if (inputMode === 'file' && !uploadedFile && !lastGuideData) return alert("Please upload a file first.");
+      if (inputMode === 'url' && !url) return alert(CONSTANTS.ERROR_MESSAGES.NO_URL);
+      if (inputMode === 'url' && !isValidUrl(url)) return alert(CONSTANTS.ERROR_MESSAGES.URL_INVALID);
+      if (inputMode === 'file' && !uploadedFile && !lastGuideData) return alert(CONSTANTS.ERROR_MESSAGES.NO_FILE);
       
       const isPDF = uploadedFile && uploadedFile.name.endsWith('.pdf');
       
@@ -338,10 +412,10 @@
         }
         formData.append('subject', "General");
 
-        response = await fetch("/api/generate-study-guide-stream", {
+        response = await fetchWithTimeout("/api/generate-study-guide", {
             method: "POST",
             body: formData
-        });
+        }, 60000);
 
         if (!response.ok) {
             const data = await response.json();
@@ -375,27 +449,13 @@
             </div>
         `;
 
-        // We can still use the stream reader to get the full text, 
-        // or just use response.text() if it's simpler.
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullMarkdown = "";
+        const data = await response.json();
         
-        const filename = response.headers.get("X-Filename") || "study_guide.md";
-        const topicTitle = response.headers.get("X-Source-Title") || "Study Guide";
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            fullMarkdown += decoder.decode(value, { stream: true });
-        }
-
-        // Finalize once fully received
         const finalData = {
             source_url: inputMode === 'url' ? url : "UPLOADED_FILE",
-            source_title: topicTitle,
-            filename: filename,
-            markdown: fullMarkdown
+            source_title: data.source_title,
+            filename: data.filename,
+            markdown: data.markdown
         };
         renderGuide(finalData); 
 
@@ -421,18 +481,18 @@
     }
 
     btnDecreaseFont.addEventListener('click', () => {
-      if (currentFontScale > 0.7) {
-        currentFontScale = Math.max(0.7, currentFontScale - 0.15);
+      if (currentFontScale > CONSTANTS.FONT_SCALE_MIN) {
+        currentFontScale = Math.max(CONSTANTS.FONT_SCALE_MIN, currentFontScale - CONSTANTS.FONT_SCALE_STEP);
         applyFontScale();
-        saveState();
+        debouncedSaveState();
       }
     });
 
     btnIncreaseFont.addEventListener('click', () => {
-      if (currentFontScale < 2.0) {
-        currentFontScale = Math.min(2.0, currentFontScale + 0.15);
+      if (currentFontScale < CONSTANTS.FONT_SCALE_MAX) {
+        currentFontScale = Math.min(CONSTANTS.FONT_SCALE_MAX, currentFontScale + CONSTANTS.FONT_SCALE_STEP);
         applyFontScale();
-        saveState();
+        debouncedSaveState();
       }
     });
 
@@ -462,7 +522,7 @@
       urlInput.disabled = (inputMode === 'file');
       btnToggleEdit.style.display = 'block';
       btnGenerateGuide.textContent = "REGENERATE";
-      if (!skipSave) saveState();
+      if (!skipSave) debouncedSaveState();
       applyFontScale();
     }
 
@@ -511,12 +571,17 @@
       btnBuildQuiz.disabled = true;
       
       quizContent.innerHTML = `
-        <div class="card processing pulse">
-            <div class="card-header">
-                <div class="circle-num">🧠</div>
-                <div class="card-title">GENERATING HIGH-DEPTH QUIZ...</div>
-            </div>
-            <div class="card-body">Gemini AI is crafting 10 complex questions and granular rationales. This takes around 20-30 seconds...</div>
+        <div class="skeleton-card">
+            <div class="skeleton-header"></div>
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line medium"></div>
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line short"></div>
+            <br>
+            <div class="skeleton-header" style="width: 40%"></div>
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line medium"></div>
+            <div class="skeleton-line"></div>
         </div>
       `;
 
@@ -538,10 +603,10 @@
         formData.append('subject', "General");
         formData.append('exclude_titles', JSON.stringify(allSeenQuestions));
 
-        const response = await fetch("/api/build-quiz-from-url", {
+        const response = await fetchWithTimeout("/api/build-quiz-from-url", {
             method: "POST",
             body: formData
-        });
+        }, 60000);
         
         const data = await response.json();
         if (!response.ok) {
@@ -564,7 +629,8 @@
         // Track these questions so we don't see them again in "New Quiz"
         if (data.questions) {
             data.questions.forEach(q => {
-                if (!allSeenQuestions.includes(q.title)) allSeenQuestions.push(q.title);
+                const qHash = quickHash(q.title + JSON.stringify(q.options));
+                if (!allSeenQuestions.includes(qHash)) allSeenQuestions.push(qHash);
             });
         }
         
@@ -573,7 +639,7 @@
           quizContent.innerHTML = `
             <div class="card">
                 <div class="card-header"><div class="circle-num" style="background:#ff4444;">!</div><div class="card-title" style="color:#ff4444;">NETWORK ERROR</div></div>
-                <div class="card-body" style="color: #ff4444; font-family: var(--font-mono); font-size: 0.85rem;">${e.message}</div>
+                <div class="card-body" style="color: #ff4444; font-family: var(--font-mono); font-size: 0.85rem;">${CONSTANTS.ERROR_MESSAGES.NETWORK_ERROR}${e.message}</div>
             </div>
           `;
           btnBuildQuiz.disabled = false;
@@ -583,6 +649,28 @@
     });
 
     function renderQuizQuestion(forceReveal = false, skipSave = false) {
+
+          // --- REVIEW MODE HELPER FUNCTIONS ---
+          function setupReviewModeUI(btnPrev, btnNext, btnRecap, totalQ, submissionActions, reviewActions) {
+            submissionActions.style.display = 'none';
+            reviewActions.style.display = 'flex';
+            btnPrev.disabled = (currentQuestionIndex === 0);
+            btnNext.disabled = (currentQuestionIndex === totalQ - 1);
+            btnPrev.onclick = () => { currentQuestionIndex--; renderQuizQuestion(true); };
+            btnNext.onclick = () => { currentQuestionIndex++; renderQuizQuestion(true); };
+            btnRecap.onclick = () => { inReviewMode = false; renderQuizSummary(); };
+          }
+
+          function setupSubmissionModeUI(submitBtn, nextBtn, totalQ, submissionActions, reviewActions) {
+            submissionActions.style.display = 'block';
+            reviewActions.style.display = 'none';
+            submitBtn.style.display = 'block';
+            nextBtn.style.display = 'none';
+            if (currentQuestionIndex === totalQ - 1) {
+              nextBtn.innerText = "REVIEW QUIZ";
+            }
+          }
+
       if (!activeQuizData || !activeQuizData.questions || currentQuestionIndex >= activeQuizData.questions.length) {
           renderQuizSummary(skipSave);
           return;
@@ -671,19 +759,10 @@
       const reviewActions = quizContent.querySelector('#review-actions');
       
       if (inReviewMode) {
-          submissionActions.style.display = 'none';
-          reviewActions.style.display = 'flex';
-          
           const btnPrev = document.getElementById('btnReviewPrev');
           const btnNext = document.getElementById('btnReviewNext');
           const btnRecap = document.getElementById('btnReviewRecap');
-          
-          btnPrev.disabled = (currentQuestionIndex === 0);
-          btnNext.disabled = (currentQuestionIndex === totalQ - 1);
-          
-          btnPrev.onclick = () => { currentQuestionIndex--; renderQuizQuestion(true); };
-          btnNext.onclick = () => { currentQuestionIndex++; renderQuizQuestion(true); };
-          btnRecap.onclick = () => { inReviewMode = false; renderQuizSummary(); };
+          setupReviewModeUI(btnPrev, btnNext, btnRecap, totalQ, submissionActions, reviewActions);
 
           // Show results immediately
           const result = userResults.find(r => r.qIdx === currentQuestionIndex);
@@ -701,9 +780,7 @@
               }
           }
       } else {
-          if (currentQuestionIndex === totalQ - 1) {
-              nextBtn.innerText = "REVIEW QUIZ";
-          }
+            setupSubmissionModeUI(submitBtn, nextBtn, totalQ, submissionActions, reviewActions);
       }
       
       const rationaleBlock = quizContent.querySelector('#rationale-block');
@@ -740,7 +817,7 @@
 
       submitBtn.addEventListener('click', () => {
         const active = quizContent.querySelector('.quiz-option.active');
-        if(!active) return alert("Select an option first.");
+        if(!active) return alert(CONSTANTS.ERROR_MESSAGES.NO_OPTION_SELECTED);
         
         const letter = active.getAttribute('data-letter');
         populateReview();
@@ -762,7 +839,7 @@
         
         submitBtn.style.display = 'none';
         nextBtn.style.display = 'block';
-        saveState();
+        debouncedSaveState();
       });
       
       nextBtn.addEventListener('click', () => {
