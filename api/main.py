@@ -16,6 +16,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import json
+import io
+import pypdf
 import google.generativeai as genai
 
 # Setup Gemini API (Make sure GOOGLE_API_KEY is in Vercel Env Vars)
@@ -189,6 +191,32 @@ def _extract_page_payload(url: str) -> dict:
     }
 
 
+def _extract_pdf_payload(fileobj: io.BytesIO, filename: str) -> dict:
+    try:
+        reader = pypdf.PdfReader(fileobj)
+        text_parts = []
+        for page in reader.pages:
+            text_parts.append(page.extract_text() or "")
+        
+        full_text = "\n".join(text_parts).strip()
+        
+        # Use filename as title if no metadata
+        title = filename
+        if reader.metadata and reader.metadata.title:
+            title = reader.metadata.title
+
+        return {
+            "title": title,
+            "headings": [], # PDF headings are harder to extract reliably without more complex logic
+            "code_samples": [],
+            "text": full_text,
+            "domain": "LOCAL_PDF",
+            "path": filename,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to process PDF: {e}")
+
+
 def _pick_topic_title(payload: dict, override: Optional[str], subject: str, url: str) -> str:
     if override and override.strip():
         return override.strip()
@@ -296,18 +324,47 @@ Tone: Professional, concise, logically dense, no filler fluff. Bold critical key
 """
 
 
-def build_study_guide_markdown(url: str, subject: str, topic_override: Optional[str]) -> StudyGuideResponse:
+def build_study_guide_markdown(
+    url: Optional[str], 
+    subject: str, 
+    topic_override: Optional[str],
+    file: Optional[UploadFile] = None
+) -> StudyGuideResponse:
     if not GOOGLE_API_KEY:
         raise HTTPException(status_code=500, detail="GOOGLE_API_KEY environment variable is not configured.")
 
-    payload = _extract_page_payload(url)
-    topic_title = _pick_topic_title(payload, topic_override, subject, url)
+    if file:
+        file_bytes = file.file.read()
+        if file.filename and file.filename.lower().endswith(".pdf"):
+            payload = _extract_pdf_payload(io.BytesIO(file_bytes), file.filename)
+            source_label = file.filename
+        else:
+            # Assume it's a markdown or text file
+            text_content = file_bytes.decode("utf-8", errors="ignore")
+            payload = {
+                "title": file.filename or "Uploaded File",
+                "headings": [],
+                "code_samples": [],
+                "text": text_content,
+                "domain": "LOCAL_FILE",
+                "path": file.filename or "uploaded.txt",
+            }
+            source_label = file.filename or "LOCAL_FILE"
+        
+        topic_title = topic_override or payload["title"]
+        url_to_report = source_label
+    else:
+        if not url:
+            raise HTTPException(status_code=400, detail="Either URL or File must be provided.")
+        payload = _extract_page_payload(url)
+        topic_title = _pick_topic_title(payload, topic_override, subject, url)
+        url_to_report = url
+
     content_excerpt = _render_source_excerpt(payload, "", limit_chars=35000)
 
     try:
-        # Based on check_models.py, the correct string for Gemini 3.1 Flash Lite is 'gemini-3.1-flash-lite-preview'
         model = genai.GenerativeModel("gemini-3.1-flash-lite-preview", system_instruction=STUDY_GUIDE_SYSTEM_PROMPT)
-        prompt = f"Target Subject: {subject}\nTopic Override: {topic_title}\nSource URL: {url}\n\nCONTENT TO SYNTHESIZE:\n{content_excerpt}"
+        prompt = f"Target Subject: {subject}\nTopic Override: {topic_title}\nSource: {url_to_report}\n\nCONTENT TO SYNTHESIZE:\n{content_excerpt}"
         
         response = model.generate_content(prompt)
         markdown = response.text.replace("```markdown", "").replace("```", "").strip() + "\n"
@@ -316,7 +373,7 @@ def build_study_guide_markdown(url: str, subject: str, topic_override: Optional[
 
     filename = f"{_slugify(subject)}_{_slugify(topic_title)}_study_guide.md"
     return StudyGuideResponse(
-        source_url=url,
+        source_url=url_to_report,
         source_title=topic_title,
         filename=filename,
         markdown=markdown,
@@ -362,16 +419,29 @@ CRITICAL RULES:
 - Your output must consist ONLY of the questions in this format, starting with `### Question 1:`.
 """
 
-def generate_ai_quiz(url: Optional[str], subject: str, topic_override: Optional[str], exclude_titles: List[str] = [], source_text: Optional[str] = None) -> ParsedQuiz:
+def generate_ai_quiz(url: Optional[str], subject: str, topic_override: Optional[str], exclude_titles: List[str] = [], file: Optional[UploadFile] = None) -> ParsedQuiz:
     if not GOOGLE_API_KEY:
         raise HTTPException(status_code=500, detail="GOOGLE_API_KEY is not configured.")
 
-    if source_text:
-        topic_title = topic_override or f"{subject.title()} Study Guide"
-        content_excerpt = source_text[:30000]
+    if file:
+        file_bytes = file.file.read()
+        if file.filename and file.filename.lower().endswith(".pdf"):
+            payload = _extract_pdf_payload(io.BytesIO(file_bytes), file.filename)
+        else:
+            text_content = file_bytes.decode("utf-8", errors="ignore")
+            payload = {
+                "title": file.filename or "Uploaded File",
+                "headings": [],
+                "code_samples": [],
+                "text": text_content,
+                "domain": "LOCAL_FILE",
+                "path": file.filename or "uploaded.txt",
+            }
+        topic_title = topic_override or payload["title"]
+        content_excerpt = _render_source_excerpt(payload, "", limit_chars=30000)
     else:
         if not url:
-            raise HTTPException(status_code=400, detail="Either URL or source text must be provided.")
+            raise HTTPException(status_code=400, detail="Either URL or file must be provided.")
         payload = _extract_page_payload(url)
         topic_title = _pick_topic_title(payload, topic_override, subject, url)
         content_excerpt = _render_source_excerpt(payload, "", limit_chars=30000)
@@ -598,9 +668,13 @@ async def upload_quiz(file: UploadFile = File(...)) -> ParsedQuiz:
 
 
 @app.post("/api/generate-study-guide", response_model=StudyGuideResponse)
-async def generate_study_guide(request: StudyGuideRequest) -> StudyGuideResponse:
-    # Use the real AI logic instead of mock templates.
-    return build_study_guide_markdown(request.url, request.subject, request.topic)
+async def generate_study_guide(
+    url: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    subject: str = Form("General"),
+    topic: Optional[str] = Form(None)
+) -> StudyGuideResponse:
+    return build_study_guide_markdown(url, subject, topic, file=file)
 
 
 @app.post("/api/build-quiz-from-url", response_model=ParsedQuiz)
@@ -621,7 +695,7 @@ async def build_quiz_from_url(
     except:
         excludes = []
 
-    return generate_ai_quiz(url, subject, topic, excludes, source_text=source_text)
+    return generate_ai_quiz(url, subject, topic, excludes, file=file)
 
 
 if __name__ == "__main__":

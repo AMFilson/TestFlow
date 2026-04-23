@@ -39,10 +39,10 @@
     <div class="url-input-group" id="inputContainer">
       <label class="url-label" for="urlInput" id="sourceLabel">SOURCE_URL</label>
       <div class="upload-toggle">
-        <label for="fileUpload" class="upload-icon-btn" title="Upload Markdown File">📎</label>
-        <input type="file" id="fileUpload" accept=".md" style="display:none;">
+        <label for="fileUpload" class="upload-icon-btn" title="Upload Source File (PDF or MD)">📎</label>
+        <input type="file" id="fileUpload" accept=".md,.pdf" style="display:none;">
       </div>
-      <input type="text" id="urlInput" class="url-input" placeholder="Paste link or drop .md file here...">
+      <input type="text" id="urlInput" class="url-input" placeholder="Paste link or drop .pdf / .md here...">
       <button class="clear-upload-btn" id="btnClearUpload" title="Return to URL Mode">✕</button>
     </div>
 
@@ -231,22 +231,41 @@
     });
 
     function handleFile(file) {
-        if (!file.name.endsWith('.md')) return alert("Please upload a .md file.");
-        uploadedFile = file;
+        const isMD = file.name.endsWith('.md');
+        const isPDF = file.name.endsWith('.pdf');
         
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const content = e.target.result;
-            const mockData = {
-                source_url: "LOCAL_FILE",
-                source_title: file.name.replace('.md', ''),
-                filename: file.name,
-                markdown: content
+        if (!isMD && !isPDF) return alert("Please upload a .md or .pdf file.");
+        
+        uploadedFile = file;
+        setFileModeUI(file.name);
+
+        if (isMD) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const content = e.target.result;
+                const mockData = {
+                    source_url: "LOCAL_FILE",
+                    source_title: file.name.replace('.md', ''),
+                    filename: file.name,
+                    markdown: content
+                };
+                renderGuide(mockData);
             };
-            setFileModeUI(file.name);
-            renderGuide(mockData);
-        };
-        reader.readAsText(file);
+            reader.readAsText(file);
+        } else {
+            // PDF: Show a placeholder until they click Generate
+            guideContent.innerHTML = `
+                <div style="font-family: var(--font-mono); color: #888; margin-top: 40px; text-align: center;">
+                  [ PDF_READY: "${file.name}" ]<br>
+                  <span style="font-size: 0.8rem; opacity: 0.7;">CLICK 'GENERATE STUDY GUIDE' TO BEGIN ANALYSIS</span>
+                </div>
+            `;
+            btnBuildQuiz.disabled = true;
+            btnDownload.disabled = true;
+            btnGenerateGuide.disabled = false;
+            btnGenerateGuide.textContent = "GENERATE STUDY GUIDE";
+            sessionState.textContent = "PDF_LOADED";
+        }
     }
 
     // Drag and Drop
@@ -284,10 +303,14 @@
 
     // 1. Generate Guide Flow
     btnGenerateGuide.addEventListener('click', async () => {
-      if (inputMode === 'file') return; // In file mode, rendering is instant on upload.
-
       const url = urlInput.value.trim();
-      if (!url) return alert("Please enter a URL first.");
+      
+      if (inputMode === 'url' && !url) return alert("Please enter a URL first.");
+      if (inputMode === 'file' && !uploadedFile && !lastGuideData) return alert("Please upload a file first.");
+      
+      // If it's an MD file we already have, we don't necessarily need to "generate" but maybe they want to re-process?
+      // For now, if it's a PDF, we DEFINITELY want to generate.
+      const isPDF = uploadedFile && uploadedFile.name.endsWith('.pdf');
       
       sessionState.textContent = "EXTRACTING_DATA";
       btnGenerateGuide.disabled = true;
@@ -301,18 +324,32 @@
       processCard.innerHTML = `
         <div class="card-header">
           <div class="circle-num">⌛</div>
-          <div class="card-title">ANALYZING SOURCE WITH GEMINI AI...</div>
+          <div class="card-title">${isPDF ? 'EXTRACTING PDF TEXT WITH GEMINI AI...' : 'ANALYZING SOURCE WITH GEMINI AI...'}</div>
         </div>
         <div class="card-body">Extracting context and generating comprehensive study guide. This may take up to 25 seconds...</div>
       `;
       guideContent.appendChild(processCard);
 
       try {
-        const response = await fetch("/api/generate-study-guide", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: url, subject: "General" })
-        });
+        let response;
+        if (inputMode === 'file' && isPDF) {
+            const formData = new FormData();
+            formData.append('file', uploadedFile);
+            formData.append('subject', "General");
+            response = await fetch("/api/generate-study-guide", {
+                method: "POST",
+                body: formData
+            });
+        } else {
+            response = await fetch("/api/generate-study-guide", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    url: inputMode === 'url' ? url : "", 
+                    subject: "General" 
+                })
+            });
+        }
         
         const data = await response.json();
         if (!response.ok) {
@@ -453,10 +490,16 @@
 
       try {
         const formData = new FormData();
-        if (inputMode === 'file' || (lastGuideData && lastGuideData.source_url === "LOCAL_FILE")) {
-            // Send the current markdown (could be edited) as a file
-            const blob = new Blob([lastGuideData.markdown], { type: 'text/markdown' });
-            formData.append('file', blob, lastGuideData.filename || 'uploaded.md');
+        const isPDF = uploadedFile && uploadedFile.name.endsWith('.pdf');
+
+        if (inputMode === 'file') {
+            if (isPDF) {
+                formData.append('file', uploadedFile);
+            } else {
+                // For MD files, send the CURRENT markdown (it might be edited)
+                const blob = new Blob([lastGuideData.markdown], { type: 'text/markdown' });
+                formData.append('file', blob, lastGuideData.filename || 'uploaded.md');
+            }
         } else {
             formData.append('url', url);
         }
