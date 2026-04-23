@@ -85,7 +85,7 @@
       
       <div id="guideContent">
         <!-- Initial empty state -->
-        <div style="font-family: var(--font-mono); color: #888; margin-top: 40px; text-align: center;">
+        <div style="font-family: var(--font-mono); color: #000; margin-top: 40px; text-align: center;">
           [ WAITING FOR SOURCE URL ]
         </div>
       </div>
@@ -101,7 +101,7 @@
       
       <div id="quizContent">
         <!-- Initial empty state -->
-        <div style="font-family: var(--font-mono); color: #888; margin-top: 40px; text-align: center;">
+        <div style="font-family: var(--font-mono); color: #000; margin-top: 40px; text-align: center;">
           [ QUIZ NOT GENERATED ]
         </div>
       </div>
@@ -351,7 +351,7 @@
             // PDF: Extract text in browser to avoid Vercel 4.5MB limit
             sessionState.textContent = "PARSING_PDF";
             guideContent.innerHTML = `
-                <div style="font-family: var(--font-mono); color: #888; margin-top: 40px; text-align: center;">
+                <div style="font-family: var(--font-mono); color: #000; margin-top: 40px; text-align: center;">
                   [ ANALYZING_PDF: "${file.name}" ]<br>
                   <span id="pdfStatus" style="font-size: 0.8rem; opacity: 0.7;">EXTRACTING TEXT...</span>
                 </div>
