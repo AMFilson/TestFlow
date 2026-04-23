@@ -348,7 +348,7 @@ Source: [URL]
 [Provide a step-by-step logic walkthrough of the most complex mechanism. Include a setup, step-by-step narration, and output.]
 
 ## Key Terminology Bank
-[Create a Markdown table with `| Term | Exam-Ready Definition |`. Include at least 15 terms found in the source.]
+[Create a Markdown table with `| Term | Exam-Ready Definition |`. Include at least 15 terms found in the source. In the "Term" column, NEVER use abbreviations or short forms (e.g., use "Non-Functional Requirement" instead of "Non-Functional Req.").]
 
 ## Watch Out For...
 [List at least 8 bullet points covering common misconceptions, default values, limitations, or traps. Format: `1. **[Trap Name]** — [Incorrect Assumption] — [Truth]`]
@@ -359,7 +359,7 @@ Source: [URL]
 ## Answer Key
 [Provide full, comprehensive answers to the 5 Active Recall questions above.]
 
-Tone: Professional, concise, logically dense, no filler fluff. Bold critical keywords. Use standard Unicode arrows (e.g., →) for mappings; NEVER use LaTeX syntax like $\rightarrow$. For abbreviations or short forms (e.g., perf, op), always state the full word followed by the short form in brackets, e.g., "Performance (perf)" or "Operational (op)". NEVER deviate from this exact markdown heading structure.
+Tone: Professional, concise, logically dense, no filler fluff. Bold critical keywords. Use standard Unicode arrows (e.g., →) for mappings; NEVER use LaTeX syntax like $\rightarrow$. For any technical abbreviations or short forms (e.g., perf, op) used in definitions or pillars, always state the full word first followed by the short form in brackets, e.g., "Performance (perf)" or "Operational (op)". NEVER deviate from this exact markdown heading structure.
 """
 
 
