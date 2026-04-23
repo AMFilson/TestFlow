@@ -358,46 +358,46 @@
             return;
         }
 
-        // Stream handling
+        // Initial skeleton container
+        sessionState.textContent = "GENERATING_CONTENT";
+        guideContent.innerHTML = `
+            <div class="skeleton-card">
+                <div class="skeleton-header"></div>
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line medium"></div>
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line short"></div>
+                <br>
+                <div class="skeleton-header" style="width: 40%"></div>
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line medium"></div>
+                <div class="skeleton-line"></div>
+            </div>
+        `;
+
+        // We can still use the stream reader to get the full text, 
+        // or just use response.text() if it's simpler.
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullMarkdown = "";
         
         const filename = response.headers.get("X-Filename") || "study_guide.md";
         const topicTitle = response.headers.get("X-Source-Title") || "Study Guide";
-        
-        // Initial guide container
-        sessionState.textContent = "STREAMING_CONTENT";
-        guideContent.innerHTML = '';
-        const guideCard = document.createElement('div');
-        guideCard.className = 'card study-guide-card';
-        guideCard.innerHTML = `<div class="card-body markdown-body"></div>`;
-        guideContent.appendChild(guideCard);
-        const markdownBody = guideCard.querySelector('.markdown-body');
-        markdownBody.innerHTML = '<span style="color: #888; font-family: var(--font-mono); font-size: 0.9rem;">[ RECEIVING_STREAM... ]</span>';
 
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            
-            const chunk = decoder.decode(value, { stream: true });
-            fullMarkdown += chunk;
-            
-            // Render partial markdown
-            markdownBody.innerHTML = marked.parse(fullMarkdown);
-            applyFontScale();
-            // Scroll to bottom of guide if it grows
-            // guideContent.scrollTop = guideContent.scrollHeight;
+            fullMarkdown += decoder.decode(value, { stream: true });
         }
 
-        // Finalize
+        // Finalize once fully received
         const finalData = {
             source_url: inputMode === 'url' ? url : "UPLOADED_FILE",
             source_title: topicTitle,
             filename: filename,
             markdown: fullMarkdown
         };
-        renderGuide(finalData); // This will set the final state and enable buttons
+        renderGuide(finalData); 
 
       } catch (e) {
           guideContent.innerHTML = `
