@@ -308,8 +308,6 @@
       if (inputMode === 'url' && !url) return alert("Please enter a URL first.");
       if (inputMode === 'file' && !uploadedFile && !lastGuideData) return alert("Please upload a file first.");
       
-      // If it's an MD file we already have, we don't necessarily need to "generate" but maybe they want to re-process?
-      // For now, if it's a PDF, we DEFINITELY want to generate.
       const isPDF = uploadedFile && uploadedFile.name.endsWith('.pdf');
       
       sessionState.textContent = "EXTRACTING_DATA";
@@ -324,35 +322,29 @@
       processCard.innerHTML = `
         <div class="card-header">
           <div class="circle-num">⌛</div>
-          <div class="card-title">${isPDF ? 'EXTRACTING PDF TEXT WITH GEMINI AI...' : 'ANALYZING SOURCE WITH GEMINI AI...'}</div>
+          <div class="card-title">${isPDF ? 'EXTRACTING PDF TEXT...' : 'ANALYZING SOURCE...'}</div>
         </div>
-        <div class="card-body">Extracting context and generating comprehensive study guide. This may take up to 25 seconds...</div>
+        <div class="card-body">Connecting to Gemini AI for real-time streaming...</div>
       `;
       guideContent.appendChild(processCard);
 
       try {
         let response;
+        const formData = new FormData();
         if (inputMode === 'file' && isPDF) {
-            const formData = new FormData();
             formData.append('file', uploadedFile);
-            formData.append('subject', "General");
-            response = await fetch("/api/generate-study-guide", {
-                method: "POST",
-                body: formData
-            });
-        } else {
-            response = await fetch("/api/generate-study-guide", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ 
-                    url: inputMode === 'url' ? url : "", 
-                    subject: "General" 
-                })
-            });
+        } else if (inputMode === 'url') {
+            formData.append('url', url);
         }
-        
-        const data = await response.json();
+        formData.append('subject', "General");
+
+        response = await fetch("/api/generate-study-guide-stream", {
+            method: "POST",
+            body: formData
+        });
+
         if (!response.ok) {
+            const data = await response.json();
             const errorMsg = data.detail || response.statusText;
             guideContent.innerHTML = `
                 <div class="card">
@@ -365,8 +357,59 @@
             sessionState.textContent = "ERROR";
             return;
         }
+
+        // Stream handling
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullMarkdown = "";
         
-        renderGuide(data);
+        const filename = response.headers.get("X-Filename") || "study_guide.md";
+        const topicTitle = response.headers.get("X-Source-Title") || "Study Guide";
+        
+        // Initial guide container
+        sessionState.textContent = "STREAMING_CONTENT";
+        guideContent.innerHTML = '';
+        const guideCard = document.createElement('div');
+        guideCard.className = 'card study-guide-card';
+        guideCard.innerHTML = `<div class="card-body markdown-body"></div>`;
+        guideContent.appendChild(guideCard);
+        const markdownBody = guideCard.querySelector('.markdown-body');
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value, { stream: true });
+            fullMarkdown += chunk;
+            
+            // Render partial markdown
+            markdownBody.innerHTML = marked.parse(fullMarkdown);
+            applyFontScale();
+            // Scroll to bottom of guide if it grows
+            // guideContent.scrollTop = guideContent.scrollHeight;
+        }
+
+        // Finalize
+        const finalData = {
+            source_url: inputMode === 'url' ? url : "UPLOADED_FILE",
+            source_title: topicTitle,
+            filename: filename,
+            markdown: fullMarkdown
+        };
+        renderGuide(finalData); // This will set the final state and enable buttons
+
+      } catch (e) {
+          guideContent.innerHTML = `
+            <div class="card">
+                <div class="card-header"><div class="circle-num" style="background:#ff4444;">!</div><div class="card-title" style="color:#ff4444;">NETWORK ERROR</div></div>
+                <div class="card-body" style="color: #ff4444; font-family: var(--font-mono); font-size: 0.85rem;">${e.message}</div>
+            </div>
+          `;
+          btnGenerateGuide.disabled = false;
+          urlInput.disabled = false;
+          sessionState.textContent = "ERROR";
+      }
+    });
       } catch (e) {
           guideContent.innerHTML = `
             <div class="card">
