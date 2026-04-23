@@ -374,6 +374,7 @@
         guideCard.innerHTML = `<div class="card-body markdown-body"></div>`;
         guideContent.appendChild(guideCard);
         const markdownBody = guideCard.querySelector('.markdown-body');
+        markdownBody.innerHTML = '<span style="color: #888; font-family: var(--font-mono); font-size: 0.9rem;">[ RECEIVING_STREAM... ]</span>';
 
         while (true) {
             const { done, value } = await reader.read();

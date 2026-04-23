@@ -379,7 +379,8 @@ header {
 }
 
 .study-guide-card .card-body {
-  font-size: 1em; /* Allow inheritance for scaling */
+  font-size: 1em;
+  color: #e2e8f0; /* Ensure text is light on dark bg */
 }
 
 .guide-edit-area {
