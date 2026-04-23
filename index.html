@@ -410,18 +410,6 @@
           sessionState.textContent = "ERROR";
       }
     });
-      } catch (e) {
-          guideContent.innerHTML = `
-            <div class="card">
-                <div class="card-header"><div class="circle-num" style="background:#ff4444;">!</div><div class="card-title" style="color:#ff4444;">NETWORK ERROR</div></div>
-                <div class="card-body" style="color: #ff4444; font-family: var(--font-mono); font-size: 0.85rem;">${e.message}</div>
-            </div>
-          `;
-          btnGenerateGuide.disabled = false;
-          urlInput.disabled = false;
-          sessionState.textContent = "ERROR";
-      }
-    });
 
     // --- FONT SCALING LOGIC ---
     function applyFontScale() {
