@@ -161,6 +161,8 @@ header {
   font-family: var(--font-sans);
   font-weight: 800;
   font-size: 1rem;
+  line-height: 1.1;
+  text-align: center;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -680,6 +682,22 @@ header {
 }
 
 /* RESPONSIVE DESIGN */
+@media (max-width: 1150px) {
+  .control-bar {
+    gap: 12px;
+    padding: 16px 20px;
+  }
+  .btn {
+    padding: 0 12px;
+    font-size: 0.85rem;
+    height: 48px;
+  }
+  .url-label {
+    padding: 0 12px;
+    font-size: 0.8rem;
+  }
+}
+
 @media (max-width: 900px) {
   header {
     flex-direction: column;
