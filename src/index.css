@@ -48,4 +48,11 @@ body {
 
 .content-area::-webkit-scrollbar { width: 4px; }
 .content-area::-webkit-scrollbar-track { background: transparent; }
-.content-area::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.05); border-radius: 10px; }
+.content-area::-webkit-scrollbar-thumb { 
+  background: transparent; 
+  border-radius: 10px; 
+  transition: background 0.3s;
+}
+.content-area:hover::-webkit-scrollbar-thumb { 
+  background: rgba(0,0,0,0.05); 
+}
