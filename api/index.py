@@ -669,30 +669,7 @@ def parse_quiz_markdown(markdown_text: str) -> List[QuizQuestion]:
 
 
 
-@app.get("/icon.ico", include_in_schema=False)
-async def serve_favicon():
-    icon_path = Path(__file__).parent.parent / "images" / "icon.ico"
-    if not icon_path.exists():
-        raise HTTPException(status_code=404, detail="Icon not found.")
-    return FileResponse(icon_path)
-
-
-@app.get("/")
-def serve_index() -> FileResponse:
-    index_path = Path(__file__).parent.parent / "index.html"
-    if not index_path.exists():
-        raise HTTPException(status_code=404, detail="index.html not found.")
-    return FileResponse(index_path)
-
-
-# Mount static files (Externalized CSS and Images)
-css_path = Path(__file__).parent.parent / "css"
-if css_path.exists():
-    app.mount("/css", StaticFiles(directory=str(css_path)), name="css")
-
-images_path = Path(__file__).parent.parent / "images"
-if images_path.exists():
-    app.mount("/images", StaticFiles(directory=str(images_path)), name="images")
+# Static files are handled by the Vite frontend on Vercel.
 
 
 @app.post("/api/upload-quiz", response_model=ParsedQuiz)
