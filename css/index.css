@@ -737,19 +737,6 @@ header {
   background-color: #161b22;
 }
 
-/* KaTeX Math Styling */
-.katex {
-  font-size: 1.05em;
-  text-rendering: auto;
-}
-
-.katex-display {
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 8px 0;
-  margin: 1rem 0;
-}
-
 /* RESPONSIVE DESIGN */
 @media (max-width: 1150px) {
   .control-bar {

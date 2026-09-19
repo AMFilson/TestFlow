@@ -172,6 +172,36 @@ def _clean_text(value: str) -> str:
     return value.strip()
 
 
+def _clean_math_syntax(text: str) -> str:
+    if not text:
+        return ""
+    # 1. Equations containing = : e.g. $Signal_n = F_{n-1} + F_{n-2}$ -> Signal_n = F_n-1 + F_n-2
+    cleaned = re.sub(
+        r"\$([^\$\n]+=[^\$\n]+)\$",
+        lambda m: re.sub(r"\^\{([^}]+)\}", r"^\1", re.sub(r"_\{([^}]+)\}", r"_\1", m.group(1))).strip(),
+        text,
+    )
+    # 2. Subscripts/superscripts on variables: e.g. $S_{max}$, $F_{n-1}$, $x_1$
+    cleaned = re.sub(
+        r"\$([a-zA-Z][a-zA-Z0-9]*_\{?[a-zA-Z0-9+\-]+\}?)\$",
+        lambda m: re.sub(r"_\{([^}]+)\}", r"_\1", m.group(1)),
+        cleaned,
+    )
+    # 3. Isolated single-letter variables: e.g. $m$, $x$, $i$, $n$ -> m, x, i, n
+    cleaned = re.sub(r"(^|[\s(\[])\$([a-zA-Z])\$([\s)\].,;:?!]|$)", r"\1\2\3", cleaned)
+    # 4. LaTeX symbols
+    cleaned = (
+        cleaned.replace(r"\rightarrow", "→")
+        .replace(r"\times", "×")
+        .replace(r"\le", "≤")
+        .replace(r"\ge", "≥")
+        .replace(r"\neq", "≠")
+        .replace(r"\approx", "≈")
+        .replace(r"\cdot", "·")
+    )
+    return cleaned
+
+
 def _extract_page_payload(url: str) -> PayloadDict:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -360,9 +390,7 @@ Source: [URL]
 [Provide full, comprehensive answers to the 5 Active Recall questions above.]
 
 Tone: Professional, concise, logically dense, no filler fluff. Bold critical keywords. Use standard Unicode arrows (e.g., →) for mappings; NEVER use LaTeX syntax like $\rightarrow$. For any technical abbreviations or short forms (e.g., perf, op) used in definitions or pillars, always state the full word first followed by the short form in brackets, e.g., "Performance (perf)" or "Operational (op)".
-Mathematical & Formula Formatting:
-- When writing mathematical formulas, equations, or scientific variables, use standard LaTeX math delimiters ($...$ for inline equations/variables like $Signal_n = F_{n-1} + F_{n-2}$, $S_{max}$, $m$; $$...$$ for standalone display equations).
-- For crypto token tickers (e.g., $STANDARD, $ETH, $BTC) or currency amounts ($100, $50M), keep them as plain text or backticks (e.g. `$STANDARD`); NEVER confuse them with opening math delimiters, and ensure all LaTeX math expressions have matching opening and closing dollar signs.
+Mathematical & Formula Formatting: NEVER use LaTeX math delimiters ($...$, $$...$$) or LaTeX syntax (e.g., do NOT write $Signal_n = F_{n-1} + F_{n-2}$, $S_{max}$, or $m$). Instead, format all formulas, equations, and variables using clean, readable plain text, standard Unicode (e.g., Signal_n = F_n-1 + F_n-2, S_max, multiplier m, ×, ÷, →), or inline code spans (e.g., `Signal_n = F_n-1 + F_n-2`). Never wrap variables or equations in dollar signs.
 NEVER deviate from this exact markdown heading structure.
 """
 
@@ -407,13 +435,14 @@ def build_study_guide_markdown(
     content_excerpt = _render_source_excerpt(payload, "", limit_chars=35000)
 
     try:
-        model = genai.GenerativeModel("gemini-3.1-flash-lite-preview", system_instruction=STUDY_GUIDE_SYSTEM_PROMPT)
+        model = genai.GenerativeModel("gemini-3.8-flash", system_instruction=STUDY_GUIDE_SYSTEM_PROMPT)
         prompt = f"Target Subject: {subject}\nTopic Override: {topic_title}\nSource: {url_to_report}\n\nCONTENT TO SYNTHESIZE:\n{content_excerpt}"
         
-        print(f"GEMINI_PROMPT_START: model=gemini-3.1-flash-lite-preview")
+        print(f"GEMINI_PROMPT_START: model=gemini-3.8-flash")
         response = model.generate_content(prompt)
         print(f"GEMINI_PROMPT_END: success")
-        markdown = response.text.replace("```markdown", "").replace("```", "").strip() + "\n"
+        raw_markdown = response.text.replace("```markdown", "").replace("```", "").strip() + "\n"
+        markdown = _clean_math_syntax(raw_markdown)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini API Error: {e}")
 
@@ -464,7 +493,7 @@ CRITICAL RULES:
 - There must be a blank line after the `<summary>` tags inside the `<details>` blocks before the actual content to ensure markdown parses correctly.
 - NEVER invent HTML attributes or functions that do not exist in the source context.
 - Use standard Unicode arrows (e.g., →) for mappings; NEVER use LaTeX syntax like $\rightarrow$.
-- For formulas, equations, and mathematical variables, use standard LaTeX math delimiters ($...$ for inline, $$...$$ for display formulas). Keep crypto token tickers ($STANDARD, $ETH) and currency amounts ($100) distinct from math delimiters with matching dollar signs.
+- NEVER use LaTeX math delimiters ($...$, $$...$$) or dollar signs around variables/formulas. Write equations and variables in clean plain text, standard Unicode, or inline code spans (e.g., `Signal_n = F_n-1 + F_n-2`, S_max, m).
 - Your output must consist ONLY of the questions in this format, starting with `### Question 1:`.
 """
 
@@ -497,8 +526,7 @@ def generate_ai_quiz(url: Optional[str], subject: str, topic_override: Optional[
         content_excerpt = _render_source_excerpt(payload, "", limit_chars=30000)
 
     try:
-        # Based on check_models.py, the correct string for Gemini 3.1 Flash Lite is 'gemini-3.1-flash-lite-preview'
-        model = genai.GenerativeModel("gemini-3.1-flash-lite-preview", system_instruction=QUIZ_SYSTEM_PROMPT)
+        model = genai.GenerativeModel("gemini-3.8-flash", system_instruction=QUIZ_SYSTEM_PROMPT)
         
         exclude_clause = ""
         if exclude_titles:
@@ -507,7 +535,7 @@ def generate_ai_quiz(url: Optional[str], subject: str, topic_override: Optional[
         prompt = f"Please generate a 10-question technical quiz specifically about this content focusing on {topic_title}:{exclude_clause}\n\n{content_excerpt}"
         
         response = model.generate_content(prompt)
-        markdown_output = response.text.strip()
+        markdown_output = _clean_math_syntax(response.text.strip())
         
         # We run the LLM output through our own strict parser to guarantee the structure
         questions = parse_quiz_markdown(markdown_output)
