@@ -52,6 +52,12 @@
       <div class="recent-links-dropdown" id="recentLinksDropdown"></div>
     </div>
 
+    <!-- DEPTH MODE TOGGLE -->
+    <div class="depth-mode-group" id="depthModeGroup" role="group" aria-label="Study Guide Depth Mode">
+      <button type="button" class="depth-btn active" id="btnDepthDeep" data-mode="deep" title="Exhaustive Master Guide with diagrams, matrices, deep-dives & full active recall">MASTER DEEP-DIVE</button>
+      <button type="button" class="depth-btn" id="btnDepthQuick" data-mode="quick" title="Fast High-Level Exam Review">QUICK REVIEW</button>
+    </div>
+
     <button class="btn btn-orange" id="btnGenerateGuide" title="Generate Study Guide">GENERATE STUDY GUIDE</button>
     <button class="btn btn-purple" id="btnBuildQuiz" title="Build Quiz" disabled>BUILD QUIZ</button>
 
@@ -140,8 +146,12 @@
     const btnToggleEdit = document.getElementById('btnToggleEdit');
     const guideEditArea = document.getElementById('guideEditArea');
 
+    const btnDepthDeep = document.getElementById('btnDepthDeep');
+    const btnDepthQuick = document.getElementById('btnDepthQuick');
+
     // --- APP STATE ---
     let inputMode = 'url'; // 'url' or 'file'
+    let studyGuideDepthMode = 'deep'; // 'deep' or 'quick'
     let uploadedFile = null;
     let uploadedFileText = null;
     let isEditing = false;
@@ -158,10 +168,10 @@
       FONT_SCALE_MIN: 0.7,
       FONT_SCALE_MAX: 2.0,
       FONT_SCALE_STEP: 0.15,
-      API_TIMEOUT_MS: 60000,
+      API_TIMEOUT_MS: 90000,
       DEBOUNCE_SAVE_MS: 1000,
       STORAGE_KEY: 'testflow_v1_state',
-      GUIDE_CHAR_LIMIT: 30000,
+      GUIDE_CHAR_LIMIT: 100000,
       ERROR_MESSAGES: {
         EMPTY_PDF: 'PDF contains no extractable text. Please ensure the PDF is not empty, scanned with OCR, or not password-protected.',
         EMPTY_MARKDOWN: 'Uploaded markdown file is empty. Please ensure the file contains text content.',
@@ -437,6 +447,22 @@
       return parts.join('');
     }
 
+    // --- DEPTH MODE TOGGLE ---
+    function setStudyGuideDepthMode(mode) {
+      studyGuideDepthMode = mode === 'quick' ? 'quick' : 'deep';
+      if (studyGuideDepthMode === 'deep') {
+        btnDepthDeep.classList.add('active');
+        btnDepthQuick.classList.remove('active');
+      } else {
+        btnDepthQuick.classList.add('active');
+        btnDepthDeep.classList.remove('active');
+      }
+      debouncedSaveState();
+    }
+
+    btnDepthDeep.addEventListener('click', () => setStudyGuideDepthMode('deep'));
+    btnDepthQuick.addEventListener('click', () => setStudyGuideDepthMode('quick'));
+
     // --- PERSISTENCE ---
     function saveState() {
       const state = {
@@ -449,7 +475,7 @@
         inReviewMode,
         currentFontScale,
         inputMode,
-        lastGuideData
+        studyGuideDepthMode
       };
       localStorage.setItem(CONSTANTS.STORAGE_KEY, JSON.stringify(state));
     }
@@ -467,6 +493,9 @@
           inReviewMode = state.inReviewMode || false;
           currentFontScale = state.currentFontScale || 1.0;
           inputMode = state.inputMode || 'url';
+          if (state.studyGuideDepthMode) {
+            setStudyGuideDepthMode(state.studyGuideDepthMode);
+          }
           if (state.urlValue) {
             urlInput.value = state.urlValue;
             if (isValidUrl(state.urlValue)) {
@@ -634,14 +663,19 @@
 
       const isPDF = uploadedFile && uploadedFile.name.endsWith('.pdf');
       
-      sessionState.textContent = "EXTRACTING_DATA";
+      sessionState.textContent = studyGuideDepthMode === 'deep' ? "SYNTHESIZING_MASTER_GUIDE" : "SYNTHESIZING_QUICK_GUIDE";
       btnGenerateGuide.disabled = true;
       urlInput.disabled = true;
+      btnDepthDeep.disabled = true;
+      btnDepthQuick.disabled = true;
       
       guideContent.innerHTML = '';
       
       guideContent.innerHTML = `
         <div class="skeleton-card">
+          <div style="font-family: var(--font-mono); font-size: 0.82rem; font-weight: 700; margin-bottom: 18px; color: var(--accent-orange); letter-spacing: 0.04em;">
+            [ ${studyGuideDepthMode === 'deep' ? 'SYNTHESIZING COMPREHENSIVE MASTER STUDY GUIDE...' : 'SYNTHESIZING QUICK REVIEW GUIDE...'} ]
+          </div>
           <div class="skeleton-header"></div>
           <div class="skeleton-line"></div>
           <div class="skeleton-line medium"></div>
@@ -670,17 +704,18 @@
             formData.append('url', url);
         }
         formData.append('subject', "General");
+        formData.append('mode', studyGuideDepthMode);
 
         response = await fetchWithTimeout("/api/generate-study-guide", {
             method: "POST",
             body: formData
-        }, 60000);
+        }, CONSTANTS.API_TIMEOUT_MS);
 
         if (response.status === 404) {
             const retry = await fetchWithTimeout("/generate-study-guide", {
                 method: "POST",
                 body: formData
-            }, 60000);
+            }, CONSTANTS.API_TIMEOUT_MS);
             if (retry.ok || retry.status !== 404) {
                 response = retry;
             }
@@ -702,7 +737,9 @@
                 </div>
             `;
             btnGenerateGuide.disabled = false;
-            urlInput.disabled = false;
+            urlInput.disabled = (inputMode === 'file');
+            btnDepthDeep.disabled = false;
+            btnDepthQuick.disabled = false;
             sessionState.textContent = "ERROR";
             return;
         }
@@ -731,7 +768,9 @@
             </div>
           `;
           btnGenerateGuide.disabled = false;
-          urlInput.disabled = false;
+          urlInput.disabled = (inputMode === 'file');
+          btnDepthDeep.disabled = false;
+          btnDepthQuick.disabled = false;
           sessionState.textContent = "ERROR";
       }
     });
@@ -783,6 +822,8 @@
       btnBuildQuiz.disabled = false;
       btnGenerateGuide.disabled = false;
       btnDownload.disabled = false;
+      btnDepthDeep.disabled = false;
+      btnDepthQuick.disabled = false;
       urlInput.disabled = (inputMode === 'file');
       btnToggleEdit.style.display = 'block';
       btnGenerateGuide.textContent = "REGENERATE";

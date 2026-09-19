@@ -361,7 +361,13 @@ def _detect_code_language(snippet: str) -> str:
     return "text"
 
 
-def _render_source_excerpt(payload: dict, source_text: str, limit_chars: int = 12000) -> str:
+def _render_source_excerpt(
+    payload: dict, 
+    source_text: str, 
+    limit_chars: int = 160000, 
+    max_headings: int = 60, 
+    max_code_samples: int = 30
+) -> str:
     excerpt_parts: List[str] = []
     if payload.get("title"):
         excerpt_parts.append(f"Title: {payload['title']}")
@@ -369,12 +375,12 @@ def _render_source_excerpt(payload: dict, source_text: str, limit_chars: int = 1
         excerpt_parts.append(f"Domain: {payload['domain']}")
     if payload.get("headings"):
         excerpt_parts.append("Headings:")
-        excerpt_parts.extend(f"- {heading}" for heading in payload["headings"][:20] if heading)
+        excerpt_parts.extend(f"- {heading}" for heading in payload["headings"][:max_headings] if heading)
     if payload.get("code_samples"):
         excerpt_parts.append("Code Samples:")
-        for sample in payload["code_samples"][:5]:
+        for sample in payload["code_samples"][:max_code_samples]:
             excerpt_parts.append("```text")
-            excerpt_parts.append(sample.strip()[:1600])
+            excerpt_parts.append(sample.strip()[:3500])
             excerpt_parts.append("```")
 
     if source_text.strip():
@@ -390,24 +396,90 @@ def _render_source_excerpt(payload: dict, source_text: str, limit_chars: int = 1
     return excerpt
 
 
-STUDY_GUIDE_SYSTEM_PROMPT = """You are an expert technical writer and educator. Your task is to synthesize the provided web page content into a comprehensive, exam-ready Markdown study guide.
+STUDY_GUIDE_DEEP_SYSTEM_PROMPT = """You are a distinguished university professor and principal systems architect. Your mission is to synthesize the provided documentation into an exhaustive, rigorous, master-level Markdown study guide suitable for high-stakes technical examinations, technical interviews, and deep architectural mastery.
+
+You MUST follow this exact document structure and include ALL sections without omission:
+
+# 📚 [Topic Title] — Comprehensive Master Study Guide
+Source: [URL]
+
+## Executive & Conceptual Foundation
+Provide an exhaustive, high-level theoretical grounding:
+- Core Thesis: Why this technology or concept exists, what fundamental engineering or computational problem it solves.
+- Domain Context: Where it sits in modern software architecture, infrastructure, or computing.
+- Essential Principles: The foundational mental models required to understand it deeply.
+
+## Architectural & System Workflow Schemas
+Provide at least one clear, high-detail ASCII diagram illustrating the core architecture, state machine, data flow, or lifecycle sequence.
+Enclose the diagram in a fenced code block (` ```text `).
+Directly below the diagram, provide a detailed narrative explaining the diagram and walking through the critical transition points.
+
+## Comprehensive Core Pillars
+Deconstruct the subject into 6 to 12 in-depth thematic pillars covering all key topics from the source.
+For EVERY pillar, you MUST use this standardized structure with clear subheadings:
+### [Pillar Number]. [Pillar Title]
+- **Conceptual Overview**: Detailed explanation of the concepts, foundational theory, and rationale.
+- **Internal Mechanics & Operations**: Step-by-step technical breakdown of how it works under the hood (data paths, memory models, algorithmic flow, execution phases).
+- **Code, Syntax, or Mathematical Formulations**: Concrete, syntactically valid code snippets, commands, or clean formula representations with inline annotations.
+- **Properties, Invariants & Tradeoffs**: Key characteristics, performance complexities (Time/Space O-notation where applicable), and structural constraints.
+
+## Comparative Analysis & Tradeoff Matrix
+Create at least one structured Markdown table comparing key components, alternative approaches, competing algorithms, or execution modes found in the source:
+| Dimension / Component | Paradigm A | Paradigm B | Key Tradeoff & When to Choose |
+Provide an analytical summary beneath the table highlighting optimal decision criteria.
+
+## Technical Deep-Dives
+Choose the 2 most intricate mechanisms or algorithms described in the source. For each:
+### Deep-Dive [Number]: [Mechanism / Algorithm Title]
+1. **Preconditions & Initial State**: Input requirements, invariants, and initial conditions.
+2. **Step-by-Step Logic Walkthrough**: A rigorous numbered walkthrough of each execution phase.
+3. **Failure Modes & Edge Behavior**: What happens under exceptional conditions, boundary cases, or resource exhaustion.
+4. **Concrete Worked Example**: A real-world example trace with step-by-step state changes and final output.
+
+## Master Terminology & Concept Bank
+Create an exhaustive Markdown table with:
+| Term | Exam-Ready Definition | Common Context / Usage |
+Include at least 20 to 25 domain terms found in the source.
+CRITICAL RULE: In the "Term" column, NEVER use informal abbreviations or acronyms without spelling out the complete term first (e.g., use "Non-Functional Requirement (NFR)" instead of "NFR", "Transmission Control Protocol (TCP)" instead of "TCP").
+
+## Traps, Gotchas & Critical Misconceptions
+List 10 to 14 high-stakes technical traps, subtler edge cases, misconceptions, default traps, or performance pitfalls. Format every item strictly as:
+1. **[Trap Name]** — [Incorrect Assumption / Common Mistake] — [Technical Reality & Correct Resolution]
+
+## Tiered Active Recall Engine
+Provide 10 to 12 high-yield questions categorized by cognitive depth:
+### Level 1: Foundational & Conceptual (3 questions)
+### Level 2: Implementation, Code & Syntax (3 questions)
+### Level 3: Architectural Tradeoffs & System Design (3 questions)
+### Level 4: Edge Cases, Debugging & Fault Tolerance (3 questions)
+
+## Exhaustive Answer Key
+Provide complete, rigorous, and fully explained solutions to each of the questions above. Include reasoning, code fragments, and underlying principles for full credit.
+
+Tone: Rigorous, authoritative, precise, logically dense, zero filler fluff. Bold critical keywords. Use standard Unicode arrows (e.g., →) for mappings; NEVER use LaTeX syntax like $\rightarrow$. For any technical abbreviations or short forms used in definitions or pillars, always state the full word first followed by the short form in brackets.
+Mathematical & Formula Formatting: NEVER use LaTeX math delimiters ($...$, $$...$$) or LaTeX syntax (e.g., do NOT write $Signal_n = F_{n-1} + F_{n-2}$, $S_{max}$, or $m$). Instead, format all formulas, equations, and variables using clean, readable plain text, standard Unicode (e.g., Signal_n = F_n-1 + F_n-2, S_max, multiplier m, ×, ÷, →), or inline code spans (e.g., `Signal_n = F_n-1 + F_n-2`). Never wrap variables or equations in dollar signs.
+NEVER deviate from this exact markdown heading structure.
+"""
+
+
+STUDY_GUIDE_QUICK_SYSTEM_PROMPT = """You are an expert technical writer and educator. Your task is to synthesize the provided web page content into a concise, exam-ready Markdown study guide for rapid review.
 
 You MUST follow this exact document structure:
 
-# 📚 [Topic Title] — Exam Study Guide
+# 📚 [Topic Title] — Quick Review Study Guide
 Source: [URL]
 
 ## Executive Summary
 [Exactly 3 sentences: (1) what the page is about, (2) the central concept/mechanism, (3) the most important exam-critical takeaway.]
 
 ## Core Pillars
-[Create 6-12 pillars. Each pillar must use an `### [Number]. [Title]` heading. Prefer bullet points over paragraphs. Include any important code examples from the source in fenced code blocks.]
+[Create 6-10 pillars. Each pillar must use an `### [Number]. [Title]` heading. Prefer concise bullet points and relevant code examples in fenced code blocks.]
 
 ## Technical Deep-Dive
-[Provide a step-by-step logic walkthrough of the most complex mechanism. Include a setup, step-by-step narration, and output.]
+[Provide a step-by-step logic walkthrough of the primary mechanism. Include a setup, step-by-step narration, and output.]
 
 ## Key Terminology Bank
-[Create a Markdown table with `| Term | Exam-Ready Definition |`. Include at least 15 terms found in the source. In the "Term" column, NEVER use abbreviations or short forms (e.g., use "Non-Functional Requirement" instead of "Non-Functional Req.").]
+[Create a Markdown table with `| Term | Exam-Ready Definition |`. Include at least 15 terms found in the source. In the "Term" column, NEVER use abbreviations or short forms without spelling out the full term first.]
 
 ## Watch Out For...
 [List at least 8 bullet points covering common misconceptions, default values, limitations, or traps. Format: `1. **[Trap Name]** — [Incorrect Assumption] — [Truth]`]
@@ -418,10 +490,13 @@ Source: [URL]
 ## Answer Key
 [Provide full, comprehensive answers to the 5 Active Recall questions above.]
 
-Tone: Professional, concise, logically dense, no filler fluff. Bold critical keywords. Use standard Unicode arrows (e.g., →) for mappings; NEVER use LaTeX syntax like $\rightarrow$. For any technical abbreviations or short forms (e.g., perf, op) used in definitions or pillars, always state the full word first followed by the short form in brackets, e.g., "Performance (perf)" or "Operational (op)".
-Mathematical & Formula Formatting: NEVER use LaTeX math delimiters ($...$, $$...$$) or LaTeX syntax (e.g., do NOT write $Signal_n = F_{n-1} + F_{n-2}$, $S_{max}$, or $m$). Instead, format all formulas, equations, and variables using clean, readable plain text, standard Unicode (e.g., Signal_n = F_n-1 + F_n-2, S_max, multiplier m, ×, ÷, →), or inline code spans (e.g., `Signal_n = F_n-1 + F_n-2`). Never wrap variables or equations in dollar signs.
+Tone: Professional, concise, logically dense, no filler fluff. Bold critical keywords. Use standard Unicode arrows (e.g., →) for mappings; NEVER use LaTeX syntax like $\rightarrow$.
+Mathematical & Formula Formatting: NEVER use LaTeX math delimiters ($...$, $$...$$) or LaTeX syntax. Instead, format all formulas, equations, and variables using clean, readable plain text, standard Unicode, or inline code spans. Never wrap variables or equations in dollar signs.
 NEVER deviate from this exact markdown heading structure.
 """
+
+STUDY_GUIDE_SYSTEM_PROMPT = STUDY_GUIDE_DEEP_SYSTEM_PROMPT
+
 
 
 def _call_gemini_model(system_instruction: str, prompt: str) -> str:
@@ -465,9 +540,10 @@ def build_study_guide_markdown(
     url: Optional[str], 
     subject: str, 
     topic_override: Optional[str],
-    file: Optional[UploadFile] = None
+    file: Optional[UploadFile] = None,
+    mode: str = "deep"
 ) -> StudyGuideResponse:
-    print(f"BUILD_STUDY_GUIDE: url={url}, subject={subject}, topic={topic_override}, file={file.filename if file else 'None'}")
+    print(f"BUILD_STUDY_GUIDE: url={url}, subject={subject}, topic={topic_override}, file={file.filename if file else 'None'}, mode={mode}")
     if not GOOGLE_API_KEY:
         raise HTTPException(status_code=500, detail="GOOGLE_API_KEY environment variable is not configured.")
 
@@ -498,17 +574,34 @@ def build_study_guide_markdown(
         topic_title = _pick_topic_title(payload, topic_override, subject, url)
         url_to_report = url
 
-    content_excerpt = _render_source_excerpt(payload, "", limit_chars=35000)
+    is_deep = (mode or "").strip().lower() == "deep"
+    limit_chars = 160000 if is_deep else 35000
+    content_excerpt = _render_source_excerpt(
+        payload, 
+        "", 
+        limit_chars=limit_chars,
+        max_headings=60 if is_deep else 20,
+        max_code_samples=30 if is_deep else 5
+    )
+    system_prompt = STUDY_GUIDE_DEEP_SYSTEM_PROMPT if is_deep else STUDY_GUIDE_QUICK_SYSTEM_PROMPT
 
     try:
-        prompt = f"Target Subject: {subject}\nTopic Override: {topic_title}\nSource: {url_to_report}\n\nCONTENT TO SYNTHESIZE:\n{content_excerpt}"
-        raw_text = _call_gemini_model(STUDY_GUIDE_SYSTEM_PROMPT, prompt)
+        mode_label = "Comprehensive Master Guide (Exhaustive, High-Yield)" if is_deep else "Quick Review Guide"
+        prompt = (
+            f"Study Guide Mode: {mode_label}\n"
+            f"Target Subject: {subject}\n"
+            f"Topic Override: {topic_title}\n"
+            f"Source: {url_to_report}\n\n"
+            f"CONTENT TO SYNTHESIZE:\n{content_excerpt}"
+        )
+        raw_text = _call_gemini_model(system_prompt, prompt)
         raw_markdown = raw_text.replace("```markdown", "").replace("```", "").strip() + "\n"
         markdown = _clean_math_syntax(raw_markdown)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini API Error: {e}")
 
-    filename = f"{_slugify(subject)}_{_slugify(topic_title)}_study_guide.md"
+    filename_suffix = "master_study_guide.md" if is_deep else "quick_study_guide.md"
+    filename = f"{_slugify(subject)}_{_slugify(topic_title)}_{filename_suffix}"
     return StudyGuideResponse(
         source_url=url_to_report,
         source_title=topic_title,
@@ -813,9 +906,10 @@ async def generate_study_guide(
     url: Annotated[Optional[str], Form()] = None,
     file: Annotated[Optional[UploadFile], File()] = None,
     subject: Annotated[str, Form()] = "General",
-    topic: Annotated[Optional[str], Form()] = None
+    topic: Annotated[Optional[str], Form()] = None,
+    mode: Annotated[str, Form()] = "deep"
 ) -> StudyGuideResponse:
-    return build_study_guide_markdown(url, subject, topic, file=file)
+    return build_study_guide_markdown(url, subject, topic, file=file, mode=mode)
 
 
 @app.post("/api/build-quiz-from-url", response_model=ParsedQuiz)

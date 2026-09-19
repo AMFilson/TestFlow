@@ -342,6 +342,53 @@ header {
   color: var(--bg-white);
 }
 
+/* DEPTH MODE TOGGLE */
+.depth-mode-group {
+  display: flex;
+  height: 48px;
+  border: 1px solid var(--border-dark);
+  background: var(--bg-white);
+  box-shadow: 2px 2px 0 var(--border-dark);
+  flex-shrink: 0;
+}
+
+.depth-btn {
+  height: 100%;
+  border: none;
+  background: transparent;
+  padding: 0 14px;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--border-dark);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.depth-btn:first-child {
+  border-right: 1px solid var(--border-dark);
+}
+
+.depth-btn:hover:not(.active) {
+  background-color: var(--accent-mint);
+}
+
+.depth-btn.active {
+  background-color: var(--bg-dark);
+  color: var(--bg-white);
+  font-weight: 800;
+}
+
+.depth-btn:focus-visible {
+  outline: 2px solid var(--accent-orange);
+  outline-offset: -2px;
+}
+
 .quiz-nav-group {
   display: flex;
   gap: 12px;
@@ -867,6 +914,9 @@ header {
 .markdown-body pre code {
   background: transparent;
   padding: 0;
+  color: #e6edf3;
+  font-family: var(--font-mono);
+  line-height: 1.45;
 }
 
 .markdown-body table {
@@ -924,6 +974,16 @@ header {
     align-items: stretch;
     padding: 20px;
     gap: 12px;
+  }
+
+  .depth-mode-group {
+    width: 100%;
+  }
+
+  .depth-btn {
+    flex: 1;
+    padding: 0 8px;
+    font-size: 0.72rem;
   }
 
   .url-input-group {
