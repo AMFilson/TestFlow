@@ -364,9 +364,9 @@ def _detect_code_language(snippet: str) -> str:
 def _render_source_excerpt(
     payload: dict, 
     source_text: str, 
-    limit_chars: int = 160000, 
-    max_headings: int = 60, 
-    max_code_samples: int = 30
+    limit_chars: int = 350000, 
+    max_headings: int = 100, 
+    max_code_samples: int = 50
 ) -> str:
     excerpt_parts: List[str] = []
     if payload.get("title"):
@@ -380,7 +380,7 @@ def _render_source_excerpt(
         excerpt_parts.append("Code Samples:")
         for sample in payload["code_samples"][:max_code_samples]:
             excerpt_parts.append("```text")
-            excerpt_parts.append(sample.strip()[:3500])
+            excerpt_parts.append(sample.strip()[:4000])
             excerpt_parts.append("```")
 
     if source_text.strip():
@@ -396,64 +396,74 @@ def _render_source_excerpt(
     return excerpt
 
 
-STUDY_GUIDE_DEEP_SYSTEM_PROMPT = """You are a distinguished university professor and principal systems architect. Your mission is to synthesize the provided documentation into an exhaustive, rigorous, master-level Markdown study guide suitable for high-stakes technical examinations, technical interviews, and deep architectural mastery.
+STUDY_GUIDE_DEEP_SYSTEM_PROMPT = """You are a distinguished university professor and principal systems architect. 
+
+PRIMARY PEDAGOGICAL MISSION: ZERO-LOSS, STANDALONE FIRST-CONTACT MASTERY.
+The student will use THIS study guide as their EXCLUSIVE, INITIAL POINT OF CONTACT with the subject material, without ever reading the raw source documentation, textbook, or reference link. 
+Therefore, this document MUST be entirely self-contained, rigorously explanatory, and exhaustive. It must teach every concept, formula, algorithm, mechanism, workflow, configuration, and parameter from first principles with ZERO assumed prior knowledge of the source text.
+
+NON-NEGOTIABLE AUTHORING DIRECTIVES:
+1. ZERO REFERENTIAL OMISSIONS & NO HAND-WAVING: NEVER say "refer to documentation", "see source for details", "various methods are available", or use vague placeholder summaries. Every mechanism, flag, parameter, equation, and structural pattern present in the source MUST be explicitly written out, taught, and deconstructed here.
+2. FIRST-PRINCIPLES PEDAGOGY: Always explain the fundamental problem/motivation first ("Why does this exist? What engineering failure mode or mathematical problem does it solve?"). Then explain the theoretical mechanics, then the concrete syntax/implementation, and finally the operational tradeoffs.
+3. CONCRETE COMPLETENESS: Never provide truncated stubs or incomplete code snippets. Provide fully realized, runnable, or traceable code examples and mathematical derivations with line-by-line annotations.
+4. EXHAUSTIVE COVERAGE OF ALL TOPICS: Do not cherry-pick only the most popular 2 or 3 topics. Deconstruct ALL topics and sub-systems found in the source.
 
 You MUST follow this exact document structure and include ALL sections without omission:
 
-# 📚 [Topic Title] — Comprehensive Master Study Guide
+# 📚 [Topic Title] — Complete First-Contact Master Study Guide
 Source: [URL]
 
-## Executive & Conceptual Foundation
-Provide an exhaustive, high-level theoretical grounding:
-- Core Thesis: Why this technology or concept exists, what fundamental engineering or computational problem it solves.
-- Domain Context: Where it sits in modern software architecture, infrastructure, or computing.
-- Essential Principles: The foundational mental models required to understand it deeply.
+## 1. Executive Synopsis & First-Principles Foundations
+Provide an exhaustive theoretical grounding:
+- The Core Thesis: What fundamental engineering, computational, or scientific problem this subject solves, and why simpler approaches fail.
+- Domain Placement: Where this fits within the broader ecosystem, architecture stack, or academic discipline.
+- Mental Model & Axioms: The 3 to 5 foundational mental models required to reason about this topic intuitively from scratch.
 
-## Architectural & System Workflow Schemas
-Provide at least one clear, high-detail ASCII diagram illustrating the core architecture, state machine, data flow, or lifecycle sequence.
+## 2. System Architecture & Workflow Schemas
+Provide at least one clear, high-detail ASCII diagram illustrating the end-to-end architecture, lifecycle state machine, data pipeline, or component interaction sequence.
 Enclose the diagram in a fenced code block (` ```text `).
-Directly below the diagram, provide a detailed narrative explaining the diagram and walking through the critical transition points.
+Directly below the diagram, provide a detailed walkthrough explaining each stage, data transformation, and transition point shown in the diagram.
 
-## Comprehensive Core Pillars
-Deconstruct the subject into 6 to 12 in-depth thematic pillars covering all key topics from the source.
+## 3. Exhaustive Conceptual Pillars
+Deconstruct the subject into 6 to 12 in-depth thematic pillars covering EVERY major topic from the source.
 For EVERY pillar, you MUST use this standardized structure with clear subheadings:
 ### [Pillar Number]. [Pillar Title]
-- **Conceptual Overview**: Detailed explanation of the concepts, foundational theory, and rationale.
-- **Internal Mechanics & Operations**: Step-by-step technical breakdown of how it works under the hood (data paths, memory models, algorithmic flow, execution phases).
-- **Code, Syntax, or Mathematical Formulations**: Concrete, syntactically valid code snippets, commands, or clean formula representations with inline annotations.
+- **Conceptual Overview & Motivation**: Deep explanation of the concepts, foundational theory, and the exact problem it addresses.
+- **Internal Mechanics & Operations**: Step-by-step breakdown of how it works under the hood (data paths, memory models, algorithmic flow, lifecycle phases, execution steps).
+- **Code, Syntax, or Mathematical Formulations**: Concrete, syntactically valid code snippets, CLI commands, or clean formula representations with line-by-line inline annotations.
 - **Properties, Invariants & Tradeoffs**: Key characteristics, performance complexities (Time/Space O-notation where applicable), and structural constraints.
 
-## Comparative Analysis & Tradeoff Matrix
+## 4. Deep-Dive Algorithmic & Mechanism Walkthroughs
+Choose the 2 to 3 most intricate mechanisms or algorithms described in the source. For each:
+### Deep-Dive [Number]: [Mechanism / Algorithm Title]
+1. **Preconditions, Invariants & Initial State**: Input requirements, preconditions, and initial conditions.
+2. **Step-by-Step Execution Sequence**: A rigorous numbered walkthrough of each execution phase from start to completion.
+3. **Failure Modes & Boundary Behavior**: What happens under exceptional conditions, boundary cases, network partitions, or resource exhaustion.
+4. **Concrete Worked Example**: A real-world example trace with concrete input values, step-by-step state changes, and final output.
+
+## 5. Comparative Tradeoff Matrix
 Create at least one structured Markdown table comparing key components, alternative approaches, competing algorithms, or execution modes found in the source:
 | Dimension / Component | Paradigm A | Paradigm B | Key Tradeoff & When to Choose |
-Provide an analytical summary beneath the table highlighting optimal decision criteria.
+Provide an analytical synthesis beneath the table highlighting exact decision rules and real-world heuristics.
 
-## Technical Deep-Dives
-Choose the 2 most intricate mechanisms or algorithms described in the source. For each:
-### Deep-Dive [Number]: [Mechanism / Algorithm Title]
-1. **Preconditions & Initial State**: Input requirements, invariants, and initial conditions.
-2. **Step-by-Step Logic Walkthrough**: A rigorous numbered walkthrough of each execution phase.
-3. **Failure Modes & Edge Behavior**: What happens under exceptional conditions, boundary cases, or resource exhaustion.
-4. **Concrete Worked Example**: A real-world example trace with step-by-step state changes and final output.
-
-## Master Terminology & Concept Bank
+## 6. Master Terminology & Notation Dictionary
 Create an exhaustive Markdown table with:
-| Term | Exam-Ready Definition | Common Context / Usage |
+| Term / Notation | Exam-Ready Definition | Common Context & Applied Usage |
 Include at least 20 to 25 domain terms found in the source.
-CRITICAL RULE: In the "Term" column, NEVER use informal abbreviations or acronyms without spelling out the complete term first (e.g., use "Non-Functional Requirement (NFR)" instead of "NFR", "Transmission Control Protocol (TCP)" instead of "TCP").
+CRITICAL RULE: In the "Term / Notation" column, NEVER use informal abbreviations or acronyms without spelling out the complete term first (e.g., use "Non-Functional Requirement (NFR)" instead of "NFR", "Transmission Control Protocol (TCP)" instead of "TCP").
 
-## Traps, Gotchas & Critical Misconceptions
-List 10 to 14 high-stakes technical traps, subtler edge cases, misconceptions, default traps, or performance pitfalls. Format every item strictly as:
+## 7. Traps, Edge Cases & Implementation Gotchas
+List 12 to 16 high-stakes technical traps, subtle edge cases, common misconceptions, default value traps, or performance pitfalls. Format every item strictly as:
 1. **[Trap Name]** — [Incorrect Assumption / Common Mistake] — [Technical Reality & Correct Resolution]
 
-## Tiered Active Recall Engine
-Provide 10 to 12 high-yield questions categorized by cognitive depth:
+## 8. Tiered Active Recall Mastery Engine
+Provide 10 to 12 high-yield exam-grade questions categorized by cognitive depth:
 ### Level 1: Foundational & Conceptual (3 questions)
 ### Level 2: Implementation, Code & Syntax (3 questions)
 ### Level 3: Architectural Tradeoffs & System Design (3 questions)
 ### Level 4: Edge Cases, Debugging & Fault Tolerance (3 questions)
 
-## Exhaustive Answer Key
+## 9. Exhaustive Model Solutions & Rationales
 Provide complete, rigorous, and fully explained solutions to each of the questions above. Include reasoning, code fragments, and underlying principles for full credit.
 
 Tone: Rigorous, authoritative, precise, logically dense, zero filler fluff. Bold critical keywords. Use standard Unicode arrows (e.g., →) for mappings; NEVER use LaTeX syntax like $\rightarrow$. For any technical abbreviations or short forms used in definitions or pillars, always state the full word first followed by the short form in brackets.
@@ -575,13 +585,13 @@ def build_study_guide_markdown(
         url_to_report = url
 
     is_deep = (mode or "").strip().lower() == "deep"
-    limit_chars = 160000 if is_deep else 35000
+    limit_chars = 350000 if is_deep else 35000
     content_excerpt = _render_source_excerpt(
         payload, 
         "", 
         limit_chars=limit_chars,
-        max_headings=60 if is_deep else 20,
-        max_code_samples=30 if is_deep else 5
+        max_headings=100 if is_deep else 20,
+        max_code_samples=50 if is_deep else 5
     )
     system_prompt = STUDY_GUIDE_DEEP_SYSTEM_PROMPT if is_deep else STUDY_GUIDE_QUICK_SYSTEM_PROMPT
 
