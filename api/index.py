@@ -451,9 +451,9 @@ def _call_gemini_model(system_instruction: str, prompt: str) -> str:
             err_msg = str(e).lower()
             last_err = e
             print(f"GEMINI_MODEL_FAILED: model={model_name}, error={e}")
-            if any(term in err_msg for term in ["not found", "404", "not supported", "is not found", "does not exist", "unsupported"]):
+            if any(term in err_msg for term in ["not found", "404", "not supported", "is not found", "does not exist", "unsupported", "429", "quota", "resourceexhausted", "resource_exhausted"]):
                 continue
-            if any(term in err_msg for term in ["api_key", "quota", "429", "rate limit", "permission"]):
+            if any(term in err_msg for term in ["api_key", "permission", "invalid argument"]):
                 raise e
             continue
     if last_err:
