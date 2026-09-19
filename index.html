@@ -558,8 +558,8 @@
     });
 
     async function handleFile(file) {
-        const isMD = file.name.endsWith('.md');
-        const isPDF = file.name.endsWith('.pdf');
+        const isMD = file.name.toLowerCase().endsWith('.md');
+        const isPDF = file.name.toLowerCase().endsWith('.pdf');
         
         if (!isMD && !isPDF) return alert(CONSTANTS.ERROR_MESSAGES.FILE_INVALID);
         
@@ -661,7 +661,7 @@
         addRecentLink(url);
       }
 
-      const isPDF = uploadedFile && uploadedFile.name.endsWith('.pdf');
+      const isPDF = uploadedFile && uploadedFile.name.toLowerCase().endsWith('.pdf');
       
       sessionState.textContent = studyGuideDepthMode === 'deep' ? "SYNTHESIZING_MASTER_GUIDE" : "SYNTHESIZING_QUICK_GUIDE";
       btnGenerateGuide.disabled = true;
@@ -692,12 +692,12 @@
       try {
         let response;
         const formData = new FormData();
-        if (inputMode === 'file' && isPDF) {
+        if (inputMode === 'file') {
             // If we have extracted text, send it as a .txt file blob to bypass the large PDF binary payload
-            if (uploadedFileText) {
+            if (isPDF && uploadedFileText) {
                 const textBlob = new Blob([uploadedFileText], { type: 'text/plain' });
                 formData.append('file', textBlob, uploadedFile.name + ".txt");
-            } else {
+            } else if (uploadedFile) {
                 formData.append('file', uploadedFile);
             }
         } else if (inputMode === 'url') {
@@ -722,10 +722,28 @@
         }
 
         let data = {};
+        const rawText = await response.text();
         try {
-            data = await response.json();
+            data = JSON.parse(rawText);
         } catch (_) {
-            data = { detail: response.statusText || "Invalid response format" };
+            let parsedError = "";
+            if (rawText.includes("<title>")) {
+                const titleMatch = rawText.match(/<title>([^<]+)<\/title>/i);
+                if (titleMatch) parsedError = titleMatch[1].trim();
+            }
+            if (!parsedError && rawText.length < 250 && !rawText.startsWith("<")) {
+                parsedError = rawText.trim();
+            }
+            if (!parsedError) {
+                if (response.status === 504) {
+                    parsedError = "Gateway Timeout (504): The server took too long to complete synthesis. Try 'QUICK REVIEW' mode or a shorter section.";
+                } else if (response.status === 413) {
+                    parsedError = "Payload Too Large (413): The uploaded file exceeds the 4.5MB serverless upload limit.";
+                } else {
+                    parsedError = `Server returned HTTP ${response.status}: ${response.statusText || 'Internal Server Error'}`;
+                }
+            }
+            data = { detail: parsedError };
         }
 
         if (!response.ok) {
@@ -932,10 +950,28 @@
         }
 
         let data = {};
+        const rawText = await response.text();
         try {
-            data = await response.json();
+            data = JSON.parse(rawText);
         } catch (_) {
-            data = { detail: response.statusText || "Invalid response format" };
+            let parsedError = "";
+            if (rawText.includes("<title>")) {
+                const titleMatch = rawText.match(/<title>([^<]+)<\/title>/i);
+                if (titleMatch) parsedError = titleMatch[1].trim();
+            }
+            if (!parsedError && rawText.length < 250 && !rawText.startsWith("<")) {
+                parsedError = rawText.trim();
+            }
+            if (!parsedError) {
+                if (response.status === 504) {
+                    parsedError = "Gateway Timeout (504): The server took too long to generate the quiz. Try a shorter section or fewer questions.";
+                } else if (response.status === 413) {
+                    parsedError = "Payload Too Large (413): File exceeds the maximum serverless upload limit.";
+                } else {
+                    parsedError = `Server returned HTTP ${response.status}: ${response.statusText || 'Internal Server Error'}`;
+                }
+            }
+            data = { detail: parsedError };
         }
 
         if (!response.ok) {

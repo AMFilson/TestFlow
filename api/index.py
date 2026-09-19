@@ -312,6 +312,8 @@ def _extract_pdf_payload(fileobj: io.BytesIO, filename: str) -> PayloadDict:
             "path": filename,
         }
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=400, detail=f"Failed to process PDF: {e}")
 
 
@@ -425,7 +427,7 @@ Enclose the diagram in a fenced code block (` ```text `).
 Directly below the diagram, provide a detailed walkthrough explaining each stage, data transformation, and transition point shown in the diagram.
 
 ## 3. Exhaustive Conceptual Pillars
-Deconstruct the subject into 6 to 12 in-depth thematic pillars covering EVERY major topic from the source.
+Deconstruct the subject into 6 to 8 in-depth thematic pillars covering EVERY major topic from the source.
 For EVERY pillar, you MUST use this standardized structure with clear subheadings:
 ### [Pillar Number]. [Pillar Title]
 - **Conceptual Overview & Motivation**: Deep explanation of the concepts, foundational theory, and the exact problem it addresses.
@@ -434,7 +436,7 @@ For EVERY pillar, you MUST use this standardized structure with clear subheading
 - **Properties, Invariants & Tradeoffs**: Key characteristics, performance complexities (Time/Space O-notation where applicable), and structural constraints.
 
 ## 4. Deep-Dive Algorithmic & Mechanism Walkthroughs
-Choose the 2 to 3 most intricate mechanisms or algorithms described in the source. For each:
+Choose the 1 to 2 most intricate mechanisms or algorithms described in the source. For each:
 ### Deep-Dive [Number]: [Mechanism / Algorithm Title]
 1. **Preconditions, Invariants & Initial State**: Input requirements, preconditions, and initial conditions.
 2. **Step-by-Step Execution Sequence**: A rigorous numbered walkthrough of each execution phase from start to completion.
@@ -449,19 +451,19 @@ Provide an analytical synthesis beneath the table highlighting exact decision ru
 ## 6. Master Terminology & Notation Dictionary
 Create an exhaustive Markdown table with:
 | Term / Notation | Exam-Ready Definition | Common Context & Applied Usage |
-Include at least 20 to 25 domain terms found in the source.
+Include at least 15 to 20 domain terms found in the source.
 CRITICAL RULE: In the "Term / Notation" column, NEVER use informal abbreviations or acronyms without spelling out the complete term first (e.g., use "Non-Functional Requirement (NFR)" instead of "NFR", "Transmission Control Protocol (TCP)" instead of "TCP").
 
 ## 7. Traps, Edge Cases & Implementation Gotchas
-List 12 to 16 high-stakes technical traps, subtle edge cases, common misconceptions, default value traps, or performance pitfalls. Format every item strictly as:
+List 8 to 12 high-stakes technical traps, subtle edge cases, common misconceptions, default value traps, or performance pitfalls. Format every item strictly as:
 1. **[Trap Name]** — [Incorrect Assumption / Common Mistake] — [Technical Reality & Correct Resolution]
 
 ## 8. Tiered Active Recall Mastery Engine
-Provide 10 to 12 high-yield exam-grade questions categorized by cognitive depth:
-### Level 1: Foundational & Conceptual (3 questions)
-### Level 2: Implementation, Code & Syntax (3 questions)
-### Level 3: Architectural Tradeoffs & System Design (3 questions)
-### Level 4: Edge Cases, Debugging & Fault Tolerance (3 questions)
+Provide 6 to 8 high-yield exam-grade questions categorized by cognitive depth:
+### Level 1: Foundational & Conceptual (2 questions)
+### Level 2: Implementation, Code & Syntax (2 questions)
+### Level 3: Architectural Tradeoffs & System Design (2 questions)
+### Level 4: Edge Cases, Debugging & Fault Tolerance (2 questions)
 
 ## 9. Exhaustive Model Solutions & Rationales
 Provide complete, rigorous, and fully explained solutions to each of the questions above. Include reasoning, code fragments, and underlying principles for full credit.
@@ -551,29 +553,41 @@ def build_study_guide_markdown(
     subject: str, 
     topic_override: Optional[str],
     file: Optional[UploadFile] = None,
+    file_bytes: Optional[bytes] = None,
+    filename: Optional[str] = None,
     mode: str = "deep"
 ) -> StudyGuideResponse:
-    print(f"BUILD_STUDY_GUIDE: url={url}, subject={subject}, topic={topic_override}, file={file.filename if file else 'None'}, mode={mode}")
+    if file and not file_bytes:
+        try:
+            file_bytes = file.file.read()
+            filename = file.filename
+        except Exception:
+            pass
+
+    print(f"BUILD_STUDY_GUIDE: url={url}, subject={subject}, topic={topic_override}, filename={filename}, mode={mode}")
     if not GOOGLE_API_KEY:
         raise HTTPException(status_code=500, detail="GOOGLE_API_KEY environment variable is not configured.")
 
-    if file:
-        file_bytes = file.file.read()
-        if file.filename and file.filename.lower().endswith(".pdf"):
-            payload = _extract_pdf_payload(io.BytesIO(file_bytes), file.filename)
-            source_label = file.filename
+    if file_bytes is not None:
+        if filename and filename.lower().endswith(".pdf"):
+            payload = _extract_pdf_payload(io.BytesIO(file_bytes), filename)
+            source_label = filename
         else:
-            # Assume it's a markdown or text file
             text_content = file_bytes.decode("utf-8", errors="ignore")
+            clean_filename = filename or "Uploaded File"
+            if clean_filename.lower().endswith(".txt"):
+                display_title = clean_filename[:-4]
+            else:
+                display_title = clean_filename
             payload = {
-                "title": file.filename or "Uploaded File",
+                "title": display_title,
                 "headings": [],
                 "code_samples": [],
                 "text": text_content,
                 "domain": "LOCAL_FILE",
-                "path": file.filename or "uploaded.txt",
+                "path": filename or "uploaded.txt",
             }
-            source_label = file.filename or "LOCAL_FILE"
+            source_label = display_title
         
         topic_title = topic_override or payload["title"]
         url_to_report = source_label
@@ -585,13 +599,13 @@ def build_study_guide_markdown(
         url_to_report = url
 
     is_deep = (mode or "").strip().lower() == "deep"
-    limit_chars = 350000 if is_deep else 35000
+    limit_chars = 120000 if is_deep else 30000
     content_excerpt = _render_source_excerpt(
         payload, 
         "", 
         limit_chars=limit_chars,
-        max_headings=100 if is_deep else 20,
-        max_code_samples=50 if is_deep else 5
+        max_headings=60 if is_deep else 20,
+        max_code_samples=30 if is_deep else 5
     )
     system_prompt = STUDY_GUIDE_DEEP_SYSTEM_PROMPT if is_deep else STUDY_GUIDE_QUICK_SYSTEM_PROMPT
 
@@ -919,7 +933,12 @@ async def generate_study_guide(
     topic: Annotated[Optional[str], Form()] = None,
     mode: Annotated[str, Form()] = "deep"
 ) -> StudyGuideResponse:
-    return build_study_guide_markdown(url, subject, topic, file=file, mode=mode)
+    file_bytes = None
+    filename = None
+    if file:
+        file_bytes = await file.read()
+        filename = file.filename
+    return build_study_guide_markdown(url, subject, topic, file_bytes=file_bytes, filename=filename, mode=mode)
 
 
 @app.post("/api/build-quiz-from-url", response_model=ParsedQuiz)
