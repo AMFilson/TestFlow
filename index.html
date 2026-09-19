@@ -498,14 +498,30 @@
         }
         formData.append('subject', "General");
 
-        response = await fetchWithTimeout("/api/generate-study-guide", {
+        let response = await fetchWithTimeout("/api/generate-study-guide", {
             method: "POST",
             body: formData
         }, 60000);
 
+        if (response.status === 404) {
+            const retry = await fetchWithTimeout("/generate-study-guide", {
+                method: "POST",
+                body: formData
+            }, 60000);
+            if (retry.ok || retry.status !== 404) {
+                response = retry;
+            }
+        }
+
+        let data = {};
+        try {
+            data = await response.json();
+        } catch (_) {
+            data = { detail: response.statusText || "Invalid response format" };
+        }
+
         if (!response.ok) {
-            const data = await response.json();
-            const errorMsg = data.detail || response.statusText;
+            const errorMsg = data.detail || response.statusText || "Server error";
             guideContent.innerHTML = `
                 <div class="card">
                     <div class="card-header"><div class="circle-num" style="background:#ff4444;">!</div><div class="card-title" style="color:#ff4444;">API ERROR</div></div>
@@ -520,8 +536,6 @@
 
         // Phase 2: JSON Parsing
         sessionState.textContent = "GENERATING_CONTENT";
-
-        const data = await response.json();
         
         const finalData = {
             source_url: inputMode === 'url' ? url : "UPLOADED_FILE",
@@ -685,14 +699,30 @@
         formData.append('subject', "General");
         formData.append('exclude_titles', JSON.stringify(allSeenQuestions));
 
-        const response = await fetchWithTimeout("/api/build-quiz-from-url", {
+        let response = await fetchWithTimeout("/api/build-quiz-from-url", {
             method: "POST",
             body: formData
         }, 60000);
         
-        const data = await response.json();
+        if (response.status === 404) {
+            const retry = await fetchWithTimeout("/build-quiz-from-url", {
+                method: "POST",
+                body: formData
+            }, 60000);
+            if (retry.ok || retry.status !== 404) {
+                response = retry;
+            }
+        }
+
+        let data = {};
+        try {
+            data = await response.json();
+        } catch (_) {
+            data = { detail: response.statusText || "Invalid response format" };
+        }
+
         if (!response.ok) {
-            const errorMsg = data.detail || response.statusText;
+            const errorMsg = data.detail || response.statusText || "Server error";
             quizContent.innerHTML = `
                 <div class="card">
                     <div class="card-header"><div class="circle-num" style="background:#ff4444;">!</div><div class="card-title" style="color:#ff4444;">API ERROR</div></div>

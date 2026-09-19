@@ -96,11 +96,34 @@ class QuizPromptResponse(BaseModel):
     prompt_markdown: str
 
 
-app = FastAPI(title="Markdown Quiz Parser", version="1.0.0")
+app = FastAPI(title="Markdown Quiz Parser", version="1.0.0", redirect_slashes=False)
 
 # Setup rate limiter: 30 requests per minute per IP for general endpoints
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
+
+@app.middleware("http")
+async def vercel_routing_middleware(request: Request, call_next):
+    # If Vercel rewrote /api/* to /api/index.py, restore original target path from headers
+    path = request.scope.get("path", "")
+    if path in ("/api/index.py", "/index.py", "/api/index"):
+        matched = (
+            request.headers.get("x-matched-path")
+            or request.headers.get("x-invoke-path")
+            or request.headers.get("x-now-route-matches")
+        )
+        if matched:
+            clean_path = matched.split("?")[0]
+            request.scope["path"] = clean_path
+
+    # Clean any accidental /api/index.py/ or /index.py/ prefixes
+    cur_path = request.scope.get("path", "")
+    if cur_path.startswith("/api/index.py/"):
+        request.scope["path"] = cur_path[len("/api/index.py"):]
+    elif cur_path.startswith("/index.py/"):
+        request.scope["path"] = cur_path[len("/index.py"):]
+
+    return await call_next(request)
 
 app.add_middleware(
     CORSMiddleware,
@@ -118,6 +141,12 @@ app.add_middleware(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=getattr(exc, "headers", None),
+        )
     print(f"GLOBAL EXCEPTION: {type(exc).__name__}: {exc}")
     import traceback
     traceback.print_exc()
@@ -395,6 +424,43 @@ NEVER deviate from this exact markdown heading structure.
 """
 
 
+def _call_gemini_model(system_instruction: str, prompt: str) -> str:
+    """
+    Invokes the requested Gemini 3.8 Flash model ('gemini-3.8-flash').
+    Includes seamless cascading fallback across verified models (e.g. models/gemini-3.8-flash,
+    gemini-3.1-flash-lite-preview, gemini-2.5-flash, gemini-1.5-flash) in case the specific
+    API key or regional endpoint returns a 404 / NotFound / Model Unsupported error.
+    """
+    candidates = [
+        "gemini-3.8-flash",
+        "models/gemini-3.8-flash",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-2.5-flash",
+        "gemini-1.5-flash",
+    ]
+    last_err = None
+    for model_name in candidates:
+        try:
+            print(f"GEMINI_CALL_START: model={model_name}")
+            model = genai.GenerativeModel(model_name, system_instruction=system_instruction)
+            response = model.generate_content(prompt)
+            if response and response.text:
+                print(f"GEMINI_SUCCESS: model={model_name}")
+                return response.text
+        except Exception as e:
+            err_msg = str(e).lower()
+            last_err = e
+            print(f"GEMINI_MODEL_FAILED: model={model_name}, error={e}")
+            if any(term in err_msg for term in ["not found", "404", "not supported", "is not found", "does not exist", "unsupported"]):
+                continue
+            if any(term in err_msg for term in ["api_key", "quota", "429", "rate limit", "permission"]):
+                raise e
+            continue
+    if last_err:
+        raise last_err
+    raise RuntimeError("Gemini model generation returned empty response across all candidate models.")
+
+
 def build_study_guide_markdown(
     url: Optional[str], 
     subject: str, 
@@ -435,13 +501,9 @@ def build_study_guide_markdown(
     content_excerpt = _render_source_excerpt(payload, "", limit_chars=35000)
 
     try:
-        model = genai.GenerativeModel("gemini-3.8-flash", system_instruction=STUDY_GUIDE_SYSTEM_PROMPT)
         prompt = f"Target Subject: {subject}\nTopic Override: {topic_title}\nSource: {url_to_report}\n\nCONTENT TO SYNTHESIZE:\n{content_excerpt}"
-        
-        print(f"GEMINI_PROMPT_START: model=gemini-3.8-flash")
-        response = model.generate_content(prompt)
-        print(f"GEMINI_PROMPT_END: success")
-        raw_markdown = response.text.replace("```markdown", "").replace("```", "").strip() + "\n"
+        raw_text = _call_gemini_model(STUDY_GUIDE_SYSTEM_PROMPT, prompt)
+        raw_markdown = raw_text.replace("```markdown", "").replace("```", "").strip() + "\n"
         markdown = _clean_math_syntax(raw_markdown)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini API Error: {e}")
@@ -526,16 +588,14 @@ def generate_ai_quiz(url: Optional[str], subject: str, topic_override: Optional[
         content_excerpt = _render_source_excerpt(payload, "", limit_chars=30000)
 
     try:
-        model = genai.GenerativeModel("gemini-3.8-flash", system_instruction=QUIZ_SYSTEM_PROMPT)
-        
         exclude_clause = ""
         if exclude_titles:
             exclude_clause = f"\n\nCRITICAL CONSTRAINT: DO NOT generate questions that are identical or very similar to these previously used titles:\n- " + "\n- ".join(exclude_titles)
 
         prompt = f"Please generate a 10-question technical quiz specifically about this content focusing on {topic_title}:{exclude_clause}\n\n{content_excerpt}"
         
-        response = model.generate_content(prompt)
-        markdown_output = _clean_math_syntax(response.text.strip())
+        raw_text = _call_gemini_model(QUIZ_SYSTEM_PROMPT, prompt)
+        markdown_output = _clean_math_syntax(raw_text.strip())
         
         # We run the LLM output through our own strict parser to guarantee the structure
         questions = parse_quiz_markdown(markdown_output)
@@ -729,6 +789,7 @@ if images_path.exists():
 
 
 @app.post("/api/upload-quiz", response_model=ParsedQuiz)
+@app.post("/upload-quiz", response_model=ParsedQuiz)
 async def upload_quiz(file: UploadFile = File(...)) -> ParsedQuiz:
     filename = file.filename or "uploaded_quiz.md"
     if not filename.lower().endswith(".md"):
@@ -745,6 +806,7 @@ async def upload_quiz(file: UploadFile = File(...)) -> ParsedQuiz:
 
 
 @app.post("/api/generate-study-guide", response_model=StudyGuideResponse)
+@app.post("/generate-study-guide", response_model=StudyGuideResponse)
 @limiter.limit("5/minute")
 async def generate_study_guide(
     request: Request,
@@ -757,6 +819,7 @@ async def generate_study_guide(
 
 
 @app.post("/api/build-quiz-from-url", response_model=ParsedQuiz)
+@app.post("/build-quiz-from-url", response_model=ParsedQuiz)
 @limiter.limit("5/minute")
 async def build_quiz_from_url(
     request: Request,
