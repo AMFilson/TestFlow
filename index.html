@@ -47,8 +47,9 @@
         <label for="fileUpload" class="upload-icon-btn" title="Upload Source File (PDF or MD)">📎</label>
         <input type="file" id="fileUpload" accept=".md,.pdf" style="display:none;">
       </div>
-      <input type="text" id="urlInput" class="url-input" placeholder="Paste link or drop .pdf / .md here...">
+      <input type="text" id="urlInput" class="url-input" placeholder="Paste link or drop .pdf / .md here..." autocomplete="off">
       <button class="clear-upload-btn" id="btnClearUpload" title="Return to URL Mode">✕</button>
+      <div class="recent-links-dropdown" id="recentLinksDropdown"></div>
     </div>
 
     <button class="btn btn-orange" id="btnGenerateGuide" title="Generate Study Guide">GENERATE STUDY GUIDE</button>
@@ -113,6 +114,7 @@
   <script>
     // --- UI ELEMENTS ---
     const urlInput = document.getElementById('urlInput');
+    const recentLinksDropdown = document.getElementById('recentLinksDropdown');
     const btnGenerateGuide = document.getElementById('btnGenerateGuide');
     const btnBuildQuiz = document.getElementById('btnBuildQuiz');
     
@@ -239,6 +241,167 @@
       }
     }
 
+    // --- HTML ESCAPE HELPER ---
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // --- RECENT LINKS MANAGEMENT ---
+    const RECENT_LINKS_KEY = 'testflow_recent_links';
+    const MAX_RECENT_LINKS = 10;
+
+    function getRecentLinks() {
+      try {
+        const raw = localStorage.getItem(RECENT_LINKS_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function saveRecentLinks(links) {
+      try {
+        localStorage.setItem(RECENT_LINKS_KEY, JSON.stringify(links.slice(0, MAX_RECENT_LINKS)));
+      } catch (_) {}
+    }
+
+    function addRecentLink(url) {
+      if (!url || typeof url !== 'string') return;
+      const clean = url.trim();
+      if (!isValidUrl(clean)) return;
+      const filtered = getRecentLinks().filter(l => l.toLowerCase() !== clean.toLowerCase());
+      filtered.unshift(clean);
+      saveRecentLinks(filtered);
+    }
+
+    function removeRecentLink(urlToRemove) {
+      const filtered = getRecentLinks().filter(l => l !== urlToRemove);
+      saveRecentLinks(filtered);
+    }
+
+    function clearRecentLinks() {
+      saveRecentLinks([]);
+    }
+
+    function renderRecentLinksDropdown(filterText = '') {
+      if (inputMode === 'file' || urlInput.disabled) {
+        hideRecentLinksDropdown();
+        return;
+      }
+
+      const allLinks = getRecentLinks();
+      const filtered = filterText
+        ? allLinks.filter(l => l.toLowerCase().includes(filterText.toLowerCase()))
+        : allLinks;
+
+      if (allLinks.length === 0) {
+        recentLinksDropdown.innerHTML = `
+          <div class="recent-links-header">
+            <span class="recent-links-title">⚡ RECENT_LINKS</span>
+          </div>
+          <div class="recent-links-empty">No recent links yet. Links you test will appear here.</div>
+        `;
+        recentLinksDropdown.classList.add('show');
+        return;
+      }
+
+      if (filtered.length === 0) {
+        recentLinksDropdown.innerHTML = `
+          <div class="recent-links-header">
+            <span class="recent-links-title">⚡ RECENT_LINKS (${allLinks.length})</span>
+            <button type="button" class="recent-links-clear" id="btnClearRecentLinks">CLEAR ALL</button>
+          </div>
+          <div class="recent-links-empty">No matching links found.</div>
+        `;
+        recentLinksDropdown.classList.add('show');
+        document.getElementById('btnClearRecentLinks')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          clearRecentLinks();
+          renderRecentLinksDropdown();
+        });
+        return;
+      }
+
+      let itemsHtml = '';
+      filtered.forEach((link, idx) => {
+        let domain = '';
+        try {
+          domain = new URL(link).hostname;
+        } catch (_) {}
+
+        itemsHtml += `
+          <li class="recent-link-item" data-index="${idx}" data-url="${escapeHtml(link)}">
+            <div class="recent-link-main">
+              <span class="recent-link-icon">🔗</span>
+              <div class="recent-link-text-group">
+                <span class="recent-link-url" title="${escapeHtml(link)}">${escapeHtml(link)}</span>
+                ${domain ? `<span class="recent-link-domain">${escapeHtml(domain)}</span>` : ''}
+              </div>
+            </div>
+            <button type="button" class="recent-link-delete" title="Remove link" data-url="${escapeHtml(link)}">✕</button>
+          </li>
+        `;
+      });
+
+      recentLinksDropdown.innerHTML = `
+        <div class="recent-links-header">
+          <span class="recent-links-title">⚡ RECENT_LINKS (${allLinks.length})</span>
+          <button type="button" class="recent-links-clear" id="btnClearRecentLinks">CLEAR ALL</button>
+        </div>
+        <ul class="recent-links-list">
+          ${itemsHtml}
+        </ul>
+      `;
+      recentLinksDropdown.classList.add('show');
+
+      document.getElementById('btnClearRecentLinks')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearRecentLinks();
+        renderRecentLinksDropdown();
+      });
+
+      recentLinksDropdown.querySelectorAll('.recent-link-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          if (e.target.closest('.recent-link-delete')) return;
+          const selectedUrl = item.getAttribute('data-url');
+          if (selectedUrl) {
+            urlInput.value = selectedUrl;
+            hideRecentLinksDropdown();
+            debouncedSaveState();
+          }
+        });
+      });
+
+      recentLinksDropdown.querySelectorAll('.recent-link-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const urlToRemove = btn.getAttribute('data-url');
+          if (urlToRemove) {
+            removeRecentLink(urlToRemove);
+            renderRecentLinksDropdown(urlInput.value.trim());
+          }
+        });
+      });
+    }
+
+    function showRecentLinksDropdown() {
+      if (inputMode === 'url' && !urlInput.disabled) {
+        renderRecentLinksDropdown(urlInput.value.trim());
+      }
+    }
+
+    function hideRecentLinksDropdown() {
+      recentLinksDropdown.classList.remove('show');
+    }
+
     // --- MARKDOWN & MATH CLEANUP HELPERS ---
     function cleanLatexAndFormat(text) {
       if (!text) return '';
@@ -304,7 +467,12 @@
           inReviewMode = state.inReviewMode || false;
           currentFontScale = state.currentFontScale || 1.0;
           inputMode = state.inputMode || 'url';
-          if (state.urlValue) urlInput.value = state.urlValue;
+          if (state.urlValue) {
+            urlInput.value = state.urlValue;
+            if (isValidUrl(state.urlValue)) {
+              addRecentLink(state.urlValue);
+            }
+          }
 
           if (inputMode === 'file' && lastGuideData) {
               setFileModeUI(lastGuideData.filename);
@@ -339,6 +507,7 @@
         urlInput.disabled = true;
         btnClearUpload.style.display = 'block';
         inputContainer.classList.remove('drag-active');
+        hideRecentLinksDropdown();
     }
 
     function clearUpload() {
@@ -459,6 +628,10 @@
       if (inputMode === 'url' && !isValidUrl(url)) return alert(CONSTANTS.ERROR_MESSAGES.URL_INVALID);
       if (inputMode === 'file' && !uploadedFile && !lastGuideData) return alert(CONSTANTS.ERROR_MESSAGES.NO_FILE);
       
+      if (inputMode === 'url' && isValidUrl(url)) {
+        addRecentLink(url);
+      }
+
       const isPDF = uploadedFile && uploadedFile.name.endsWith('.pdf');
       
       sessionState.textContent = "EXTRACTING_DATA";
@@ -498,7 +671,7 @@
         }
         formData.append('subject', "General");
 
-        let response = await fetchWithTimeout("/api/generate-study-guide", {
+        response = await fetchWithTimeout("/api/generate-study-guide", {
             method: "POST",
             body: formData
         }, 60000);
@@ -658,6 +831,9 @@
     // 2. Build Quiz Flow
     btnBuildQuiz.addEventListener('click', async () => {
       const url = urlInput.value.trim();
+      if (inputMode === 'url' && isValidUrl(url)) {
+        addRecentLink(url);
+      }
       sessionState.textContent = "BUILDING_QUIZ";
       btnBuildQuiz.disabled = true;
       
@@ -1037,6 +1213,59 @@
 
       if(!skipSave) saveState();
     }
+
+    // --- RECENT LINKS EVENT LISTENERS ---
+    urlInput.addEventListener('focus', showRecentLinksDropdown);
+    urlInput.addEventListener('click', showRecentLinksDropdown);
+    urlInput.addEventListener('input', () => {
+      if (recentLinksDropdown.classList.contains('show')) {
+        renderRecentLinksDropdown(urlInput.value.trim());
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!inputContainer.contains(e.target)) {
+        hideRecentLinksDropdown();
+      }
+    });
+
+    urlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        hideRecentLinksDropdown();
+        return;
+      }
+      const items = recentLinksDropdown.querySelectorAll('.recent-link-item');
+      if (!items.length || !recentLinksDropdown.classList.contains('show')) return;
+
+      let activeIndex = -1;
+      items.forEach((item, i) => {
+        if (item.classList.contains('active')) activeIndex = i;
+      });
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const nextIndex = activeIndex < items.length - 1 ? activeIndex + 1 : 0;
+        items.forEach(it => it.classList.remove('active'));
+        items[nextIndex].classList.add('active');
+        items[nextIndex].scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prevIndex = activeIndex > 0 ? activeIndex - 1 : items.length - 1;
+        items.forEach(it => it.classList.remove('active'));
+        items[prevIndex].classList.add('active');
+        items[prevIndex].scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Enter') {
+        if (activeIndex >= 0 && items[activeIndex]) {
+          e.preventDefault();
+          const selectedUrl = items[activeIndex].getAttribute('data-url');
+          if (selectedUrl) {
+            urlInput.value = selectedUrl;
+            hideRecentLinksDropdown();
+            debouncedSaveState();
+          }
+        }
+      }
+    });
 
     // Initialize State
     window.addEventListener('load', loadState);
