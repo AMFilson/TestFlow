@@ -12,6 +12,10 @@
   <link rel="stylesheet" href="css/index.css">
   <!-- Markdown Parser for AI Output -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- KaTeX for Math & Formula Rendering -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
   <!-- PDF Generator -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <!-- PDF Parser for large files -->
@@ -236,6 +240,40 @@
         return url.protocol === 'http:' || url.protocol === 'https:';
       } catch (e) {
         return false;
+      }
+    }
+
+    // --- MARKDOWN & MATH RENDERING HELPERS ---
+    function prepareMarkdown(text) {
+      if (!text) return '';
+      const codeRegex = /(```[\s\S]*?```|`[^`\n]*?`)/g;
+      const parts = text.split(codeRegex);
+      for (let i = 0; i < parts.length; i += 2) {
+        let s = parts[i];
+        // Protect currency amounts: e.g. $100, $1,000,000, $50M, $0.25 (not followed by $)
+        s = s.replace(/\$(\d+(?:,\d{3})*(?:\.\d+)?(?:[kKmMbBtT]\b)?)(?!\$)/g, '&#36;$1');
+        // Protect crypto ticker symbols / cashtags: e.g. $STANDARD, $ETH, $BTC (not followed by $ or { or _)
+        s = s.replace(/\$([A-Z]{2,10})(?=[^A-Za-z0-9_{$]|$)(?!\$)/g, '&#36;$1');
+        parts[i] = s;
+      }
+      return parts.join('');
+    }
+
+    function renderMath(element) {
+      if (!element || typeof renderMathInElement !== 'function') return;
+      try {
+        renderMathInElement(element, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true },
+            { left: '\\[', right: '\\]', display: true },
+            { left: '$', right: '$', display: false },
+            { left: '\\(', right: '\\)', display: false }
+          ],
+          throwOnError: false,
+          ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+        });
+      } catch (e) {
+        console.warn('KaTeX render error:', e);
       }
     }
 
@@ -549,7 +587,7 @@
 
       div.className = 'card study-guide-card';
       
-      const rawHtml = marked.parse(data.markdown);
+      const rawHtml = marked.parse(prepareMarkdown(data.markdown));
       
       div.innerHTML = `
         <div class="card-body markdown-body">
@@ -557,6 +595,7 @@
         </div>
       `;
       guideContent.appendChild(div);
+      renderMath(div);
 
       btnBuildQuiz.disabled = false;
       btnGenerateGuide.disabled = false;
@@ -736,7 +775,7 @@
       const questionObj = activeQuizData.questions[currentQuestionIndex];
       let optionsHtml = '';
       questionObj.options.forEach((opt) => {
-        const parsedText = marked.parseInline(opt.text);
+        const parsedText = marked.parseInline(prepareMarkdown(opt.text));
         optionsHtml += `
           <div class="quiz-option" data-letter="${opt.letter}">
             <div class="quiz-option-text">${opt.letter}) ${parsedText}</div>
@@ -745,8 +784,8 @@
         `;
       });
 
-      const bodyHtml = marked.parse(questionObj.body_markdown);
-      const parsedTitle = questionObj.title ? marked.parseInline(questionObj.title) : 'Question';
+      const bodyHtml = marked.parse(prepareMarkdown(questionObj.body_markdown));
+      const parsedTitle = questionObj.title ? marked.parseInline(prepareMarkdown(questionObj.title)) : 'Question';
       
       quizContent.innerHTML = `
         <div class="quiz-question-box">
@@ -779,9 +818,12 @@
         </div>
       `;
 
+      renderMath(quizContent);
+
       const hintText = quizContent.querySelector('#hint-text');
       if (questionObj.hint_markdown) {
-          hintText.innerHTML = marked.parseInline(questionObj.hint_markdown);
+          hintText.innerHTML = marked.parseInline(prepareMarkdown(questionObj.hint_markdown));
+          renderMath(hintText);
           quizContent.querySelector('#hint-block').style.display = 'block';
       }
 
@@ -840,13 +882,14 @@
           if (questionObj.rationale) {
               questionObj.rationale.forEach(r => {
                    const prefix = r.letter ? `<strong>${r.letter})</strong> ` : "";
-                   rHTML += "<li style='margin-bottom:8px;'>" + prefix + marked.parseInline(r.text || '') + "</li>";
+                   rHTML += "<li style='margin-bottom:8px;'>" + prefix + marked.parseInline(prepareMarkdown(r.text || '')) + "</li>";
               });
           }
           rHTML += "</ul>";
           ratText.innerHTML = rHTML;
           rationaleBlock.style.display = 'block';
           opts.forEach(o => o.style.pointerEvents = 'none');
+          renderMath(rationaleBlock);
       };
 
       if (inReviewMode) {
@@ -943,6 +986,8 @@
           ${resultsHtml}
         </div>
       `;
+
+      renderMath(quizContent);
 
       // Wire up clicks for detailed review
       const rows = quizContent.querySelectorAll('.result-row');

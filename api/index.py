@@ -359,7 +359,11 @@ Source: [URL]
 ## Answer Key
 [Provide full, comprehensive answers to the 5 Active Recall questions above.]
 
-Tone: Professional, concise, logically dense, no filler fluff. Bold critical keywords. Use standard Unicode arrows (e.g., →) for mappings; NEVER use LaTeX syntax like $\rightarrow$. For any technical abbreviations or short forms (e.g., perf, op) used in definitions or pillars, always state the full word first followed by the short form in brackets, e.g., "Performance (perf)" or "Operational (op)". NEVER deviate from this exact markdown heading structure.
+Tone: Professional, concise, logically dense, no filler fluff. Bold critical keywords. Use standard Unicode arrows (e.g., →) for mappings; NEVER use LaTeX syntax like $\rightarrow$. For any technical abbreviations or short forms (e.g., perf, op) used in definitions or pillars, always state the full word first followed by the short form in brackets, e.g., "Performance (perf)" or "Operational (op)".
+Mathematical & Formula Formatting:
+- When writing mathematical formulas, equations, or scientific variables, use standard LaTeX math delimiters ($...$ for inline equations/variables like $Signal_n = F_{n-1} + F_{n-2}$, $S_{max}$, $m$; $$...$$ for standalone display equations).
+- For crypto token tickers (e.g., $STANDARD, $ETH, $BTC) or currency amounts ($100, $50M), keep them as plain text or backticks (e.g. `$STANDARD`); NEVER confuse them with opening math delimiters, and ensure all LaTeX math expressions have matching opening and closing dollar signs.
+NEVER deviate from this exact markdown heading structure.
 """
 
 
@@ -460,6 +464,7 @@ CRITICAL RULES:
 - There must be a blank line after the `<summary>` tags inside the `<details>` blocks before the actual content to ensure markdown parses correctly.
 - NEVER invent HTML attributes or functions that do not exist in the source context.
 - Use standard Unicode arrows (e.g., →) for mappings; NEVER use LaTeX syntax like $\rightarrow$.
+- For formulas, equations, and mathematical variables, use standard LaTeX math delimiters ($...$ for inline, $$...$$ for display formulas). Keep crypto token tickers ($STANDARD, $ETH) and currency amounts ($100) distinct from math delimiters with matching dollar signs.
 - Your output must consist ONLY of the questions in this format, starting with `### Question 1:`.
 """
 
